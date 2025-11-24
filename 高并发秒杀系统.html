@@ -1,0 +1,314 @@
+﻿<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>高并发秒杀系统</title>
+  <link rel="stylesheet" href="https://stackedit.io/style.css" />
+</head>
+
+<body class="stackedit">
+  <div class="stackedit__html"><p></p><div class="toc"><h3>文章目录</h3><ul><ul><li><a href="#_7">技术选型</a></li><li><a href="#_13">项目架构</a></li><li><a href="#secKillweb_44">secKill-web</a></li><li><a href="#secKillService_125">secKillService</a></li></ul></ul></div><p></p>
+<hr>
+<p>分享一个秒杀系统项目，每个用户每天可以抢购一种商品，利用RocketMq作为消息队列，一个boot项目为发送者，另外一个是消费者，在发送者boot中，使用redis进行去重和预存的预扣减，对数据库操作都在消费者线程中进行，使用锁，redis分布式锁循序渐进并发控制</p>
+<hr>
+<h2><a id="_7"></a>技术选型</h2>
+<ul>
+<li>Springboot +接收请求并操作redis和mysql</li>
+<li>Redis   用于缓存+分布式锁</li>
+<li>Rocketmq  用于解耦  削峰，异步</li>
+<li>Mysql   用于存放真实的商品信息</li>
+<li>Mybatis   用于操作数据库的orm框架</li>
+</ul>
+<h2><a id="_13"></a>项目架构</h2>
+<p><img src="https://i-blog.csdnimg.cn/direct/84fe89f40d6c402db2f878a68f05d4dc.png" alt="在这里插入图片描述"><br>
+数据库信息如下图所示，一个商品数量表，一个消费记录表</p>
+<pre><code class="prism language-sql"><span class="token keyword">create</span> <span class="token keyword">table</span> goods
+<span class="token punctuation">(</span>
+    id          <span class="token keyword">int</span> <span class="token keyword">auto_increment</span>
+        <span class="token keyword">primary</span> <span class="token keyword">key</span><span class="token punctuation">,</span>
+    goods_name  <span class="token keyword">varchar</span><span class="token punctuation">(</span><span class="token number">255</span><span class="token punctuation">)</span>   <span class="token boolean">null</span><span class="token punctuation">,</span>
+    price       <span class="token keyword">decimal</span><span class="token punctuation">(</span><span class="token number">10</span><span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">)</span> <span class="token boolean">null</span><span class="token punctuation">,</span>
+    stocks      <span class="token keyword">int</span><span class="token punctuation">(</span><span class="token number">255</span><span class="token punctuation">)</span>       <span class="token boolean">null</span><span class="token punctuation">,</span>
+    <span class="token keyword">status</span>      <span class="token keyword">int</span><span class="token punctuation">(</span><span class="token number">255</span><span class="token punctuation">)</span>       <span class="token boolean">null</span><span class="token punctuation">,</span>
+    pic         <span class="token keyword">varchar</span><span class="token punctuation">(</span><span class="token number">255</span><span class="token punctuation">)</span>   <span class="token boolean">null</span><span class="token punctuation">,</span>
+    create_time <span class="token keyword">datetime</span>       <span class="token boolean">null</span><span class="token punctuation">,</span>
+    update_time <span class="token keyword">datetime</span>       <span class="token boolean">null</span>
+<span class="token punctuation">)</span>
+    <span class="token keyword">collate</span> <span class="token operator">=</span> utf8mb4_unicode_ci
+    row_format <span class="token operator">=</span> DYNAMIC<span class="token punctuation">;</span>
+
+<span class="token keyword">create</span> <span class="token keyword">table</span> order_records
+<span class="token punctuation">(</span>
+    id          <span class="token keyword">int</span> <span class="token keyword">auto_increment</span>
+        <span class="token keyword">primary</span> <span class="token keyword">key</span><span class="token punctuation">,</span>
+    user_id     <span class="token keyword">int</span>          <span class="token boolean">null</span><span class="token punctuation">,</span>
+    order_sn    <span class="token keyword">varchar</span><span class="token punctuation">(</span><span class="token number">255</span><span class="token punctuation">)</span> <span class="token boolean">null</span><span class="token punctuation">,</span>
+    goods_id    <span class="token keyword">int</span>          <span class="token boolean">null</span><span class="token punctuation">,</span>
+    create_time <span class="token keyword">datetime</span>     <span class="token boolean">null</span>
+<span class="token punctuation">)</span>
+    <span class="token keyword">collate</span> <span class="token operator">=</span> utf8mb4_unicode_ci
+    row_format <span class="token operator">=</span> DYNAMIC<span class="token punctuation">;</span>
+</code></pre>
+<h2><a id="secKillweb_44"></a>secKill-web</h2>
+<p>用户交互系统<br>
+<img src="https://i-blog.csdnimg.cn/direct/c558071065eb4afa91a6660bbd7fb311.png" alt="在这里插入图片描述"><br>
+项目整体代码如下</p>
+<pre><code class="prism language-java">    <span class="token annotation punctuation">@GetMapping</span><span class="token punctuation">(</span><span class="token string">"/secKill"</span><span class="token punctuation">)</span>
+    <span class="token keyword">public</span> <span class="token class-name">String</span> <span class="token function">doKill</span><span class="token punctuation">(</span><span class="token class-name">Integer</span> goodId<span class="token punctuation">,</span><span class="token class-name">Integer</span> userId<span class="token punctuation">)</span><span class="token punctuation">{</span>
+        <span class="token comment">//用户去重</span>
+        <span class="token class-name">String</span> uk <span class="token operator">=</span> goodId <span class="token operator">+</span><span class="token string">"-"</span><span class="token operator">+</span>userId<span class="token punctuation">;</span>
+        <span class="token comment">//一天过期时间 也就是说每种商品每天可以抢购一次</span>
+        <span class="token class-name">Boolean</span> flag <span class="token operator">=</span> stringRedisTemplate<span class="token punctuation">.</span><span class="token function">opsForValue</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">setIfAbsent</span><span class="token punctuation">(</span>uk<span class="token punctuation">,</span> <span class="token string">""</span><span class="token punctuation">,</span> <span class="token class-name">Duration</span><span class="token punctuation">.</span><span class="token function">ofDays</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">if</span><span class="token punctuation">(</span><span class="token operator">!</span>flag<span class="token punctuation">)</span><span class="token punctuation">{</span>
+            <span class="token keyword">return</span> <span class="token string">"今天你已经抢购过了，请明天再来"</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token comment">//TODO 库存的预扣减，假如redis存的是goodId:stock</span>
+        <span class="token comment">//线程不安全的写法</span>
+<span class="token comment">//        String s = stringRedisTemplate.opsForValue().get("goodsId:"+goodId);</span>
+<span class="token comment">//        Integer count = Integer.parseInt(s);</span>
+<span class="token comment">//        count--;</span>
+<span class="token comment">//        if(count&lt;0){</span>
+<span class="token comment">//            return "库存商品已抢完";</span>
+<span class="token comment">//        }</span>
+<span class="token comment">//        stringRedisTemplate.opsForValue().set(goodId.toString(),count.toString());</span>
+
+        <span class="token comment">//redis操作数据是单线程的</span>
+        <span class="token class-name">Long</span> count <span class="token operator">=</span> stringRedisTemplate<span class="token punctuation">.</span><span class="token function">opsForValue</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">decrement</span><span class="token punctuation">(</span><span class="token string">"goodsId:"</span> <span class="token operator">+</span> goodId<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">if</span><span class="token punctuation">(</span>count<span class="token operator">&lt;</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">{</span>
+            <span class="token keyword">return</span> <span class="token string">"该商品已抢完"</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token comment">//MQ异步处理</span>
+        rocketMQTemplate<span class="token punctuation">.</span><span class="token function">asyncSend</span><span class="token punctuation">(</span><span class="token string">"secKillTopic"</span><span class="token punctuation">,</span> uk<span class="token punctuation">,</span> <span class="token keyword">new</span> <span class="token class-name">SendCallback</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+            <span class="token annotation punctuation">@Override</span>
+            <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">onSuccess</span><span class="token punctuation">(</span><span class="token class-name">SendResult</span> sendResult<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+                log<span class="token punctuation">.</span><span class="token function">info</span><span class="token punctuation">(</span><span class="token string">"消息发送成功"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            <span class="token annotation punctuation">@Override</span>
+            <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">onException</span><span class="token punctuation">(</span><span class="token class-name">Throwable</span> throwable<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+                log<span class="token punctuation">.</span><span class="token function">error</span><span class="token punctuation">(</span><span class="token string">"用户id:"</span><span class="token operator">+</span>userId<span class="token operator">+</span><span class="token string">"商品id:"</span><span class="token operator">+</span>goodId<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                log<span class="token punctuation">.</span><span class="token function">info</span><span class="token punctuation">(</span><span class="token string">"消息发生失败"</span><span class="token operator">+</span>throwable<span class="token punctuation">.</span><span class="token function">getMessage</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">return</span> <span class="token string">"正在拼命抢购中，请稍后在订单中心查看"</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+</code></pre>
+<p><strong>代码分析：</strong><br>
+<code>在web端启动之前，一定要先保证数据库和redis的物品库存保持一致</code><br>
+我认为这部分代码最为精巧，第一次接触redis分布式锁，使用<code>setIfAbsent</code>来进行<strong>用户去重</strong>，每个用户每天只能抢购一个物品</p>
+<pre><code class="prism language-java"><span class="token class-name">String</span> uk <span class="token operator">=</span> goodId <span class="token operator">+</span><span class="token string">"-"</span><span class="token operator">+</span>userId<span class="token punctuation">;</span>
+<span class="token comment">//一天过期时间 也就是说每种商品每天可以抢购一次</span>
+<span class="token class-name">Boolean</span> flag <span class="token operator">=</span> stringRedisTemplate<span class="token punctuation">.</span><span class="token function">opsForValue</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">setIfAbsent</span><span class="token punctuation">(</span>uk<span class="token punctuation">,</span> <span class="token string">""</span><span class="token punctuation">,</span> <span class="token class-name">Duration</span><span class="token punctuation">.</span><span class="token function">ofDays</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">if</span><span class="token punctuation">(</span><span class="token operator">!</span>flag<span class="token punctuation">)</span><span class="token punctuation">{</span>
+   <span class="token keyword">return</span> <span class="token string">"今天你已经抢购过了，请明天再来"</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>接下里是<strong>预扣减</strong>逻辑，普通人写肯定是先<strong>查询-&gt;扣减-&gt;写入</strong>这样有非常严重的多线程问题，下面代码也很精巧，利用<strong>redis的单线程特点</strong>直接在redis层面进行扣减</p>
+<pre><code class="prism language-java"><span class="token class-name">Long</span> count <span class="token operator">=</span> stringRedisTemplate<span class="token punctuation">.</span><span class="token function">opsForValue</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">decrement</span><span class="token punctuation">(</span><span class="token string">"goodsId:"</span> <span class="token operator">+</span> goodId<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">if</span><span class="token punctuation">(</span>count<span class="token operator">&lt;</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">{</span>
+    <span class="token keyword">return</span> <span class="token string">"该商品已抢完"</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>redis扣减完就得开始往MQ发送数据了，保证数据库服务正确扣减,接下来<strong>异步发送消息</strong>，最后<code>return</code> 的时候也很有意思，不直接说<code>抢购成功</code>因为还没有正式写入数据库，订单页面还没有数据</p>
+<pre><code class="prism language-java"><span class="token comment">//MQ异步处理</span>
+rocketMQTemplate<span class="token punctuation">.</span><span class="token function">asyncSend</span><span class="token punctuation">(</span><span class="token string">"secKillTopic"</span><span class="token punctuation">,</span> uk<span class="token punctuation">,</span> <span class="token keyword">new</span> <span class="token class-name">SendCallback</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+    <span class="token annotation punctuation">@Override</span>
+    <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">onSuccess</span><span class="token punctuation">(</span><span class="token class-name">SendResult</span> sendResult<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+        log<span class="token punctuation">.</span><span class="token function">info</span><span class="token punctuation">(</span><span class="token string">"消息发送成功"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token annotation punctuation">@Override</span>
+    <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">onException</span><span class="token punctuation">(</span><span class="token class-name">Throwable</span> throwable<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+        log<span class="token punctuation">.</span><span class="token function">error</span><span class="token punctuation">(</span><span class="token string">"用户id:"</span><span class="token operator">+</span>userId<span class="token operator">+</span><span class="token string">"商品id:"</span><span class="token operator">+</span>goodId<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        log<span class="token punctuation">.</span><span class="token function">info</span><span class="token punctuation">(</span><span class="token string">"消息发生失败"</span><span class="token operator">+</span>throwable<span class="token punctuation">.</span><span class="token function">getMessage</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">return</span> <span class="token string">"正在拼命抢购中，请稍后在订单中心查看"</span><span class="token punctuation">;</span>
+</code></pre>
+<h2><a id="secKillService_125"></a>secKillService</h2>
+<p>首先要先进行数据库redis同步，每天在特定时间段（抢购开始之前），将前一天的数据同步给redis，使用<code>SpringTask</code>即可，这里没有什么好说的</p>
+<pre><code class="prism language-java"><span class="token comment">//每天晚上某个时间将MySQL库存同步到redis</span>
+<span class="token annotation punctuation">@Component</span>
+<span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">DataSync</span> <span class="token punctuation">{</span>
+    <span class="token annotation punctuation">@Autowired</span>
+    <span class="token keyword">private</span> <span class="token class-name">GoodsMapper</span> goodsMapper<span class="token punctuation">;</span>
+    <span class="token annotation punctuation">@Autowired</span>
+    <span class="token keyword">private</span> <span class="token class-name">RedisTemplate</span> redisTemplate<span class="token punctuation">;</span>
+
+    <span class="token comment">//每天白天十点进行同步</span>
+    <span class="token annotation punctuation">@Scheduled</span><span class="token punctuation">(</span>cron <span class="token operator">=</span> <span class="token string">"0 0 10 * * *"</span><span class="token punctuation">)</span>
+    <span class="token annotation punctuation">@PostConstruct</span>
+    <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">initData</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{</span>
+        <span class="token class-name">List</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">Goods</span><span class="token punctuation">&gt;</span></span> list <span class="token operator">=</span> goodsMapper<span class="token punctuation">.</span><span class="token function">getAllGoods</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">if</span><span class="token punctuation">(</span><span class="token class-name">CollectionUtils</span><span class="token punctuation">.</span><span class="token function">isEmpty</span><span class="token punctuation">(</span>list<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">{</span>
+            <span class="token keyword">return</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        list<span class="token punctuation">.</span><span class="token function">forEach</span><span class="token punctuation">(</span>goods <span class="token operator">-&gt;</span> redisTemplate<span class="token punctuation">.</span><span class="token function">opsForValue</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">set</span><span class="token punctuation">(</span><span class="token string">"goodId"</span><span class="token operator">+</span>goods<span class="token punctuation">.</span><span class="token function">getId</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span>goods<span class="token punctuation">.</span><span class="token function">getStocks</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+<span class="token punctuation">}</span>
+</code></pre>
+<p>接下来先跳出这个项目，讲一下RocketMq是怎么在boot里进行消费的，下面代码是个小demo,无需可以启动消费,注册<code>@Component,@RocketMQMessageListener</code>再实现<br>
+<code>RocketMQListener</code>接口就可以用了，下面代码很重要，可以先看一下</p>
+<pre><code class="prism language-java"><span class="token annotation punctuation">@Component</span>
+<span class="token annotation punctuation">@RocketMQMessageListener</span><span class="token punctuation">(</span>topic <span class="token operator">=</span> <span class="token string">"01-producer"</span><span class="token punctuation">,</span>
+        consumerGroup <span class="token operator">=</span> <span class="token string">"secKill-consumer-group"</span><span class="token punctuation">,</span>
+        consumeMode <span class="token operator">=</span> <span class="token class-name">ConsumeMode</span><span class="token punctuation">.</span>CONCURRENTLY<span class="token punctuation">,</span>
+        maxReconsumeTimes <span class="token operator">=</span> <span class="token number">4</span><span class="token punctuation">)</span><span class="token comment">//主题、消费者组，消费者模式、最大重消费次数</span>
+<span class="token annotation punctuation">@Slf4j</span>
+<span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">ABootSimplerListener</span> <span class="token keyword">implements</span> <span class="token class-name">RocketMQListener</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">MessageExt</span><span class="token punctuation">&gt;</span></span> <span class="token punctuation">{</span>
+
+    <span class="token comment">/**
+     * onMessage就是消息消费的方法
+     * RocketMQListener&lt;String&gt;泛型为STring的时候，就是消息体本身
+     * 但是以后都用MessageExt，因为即可以获取消息体，也可以获取消息头内容
+     * @param s
+     */</span>
+    <span class="token annotation punctuation">@Override</span>
+    <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">onMessage</span><span class="token punctuation">(</span><span class="token class-name">MessageExt</span> s<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+        log<span class="token punctuation">.</span><span class="token function">info</span><span class="token punctuation">(</span><span class="token string">"获取的消息内容为："</span> <span class="token operator">+</span> <span class="token keyword">new</span> <span class="token class-name">String</span><span class="token punctuation">(</span>s<span class="token punctuation">.</span><span class="token function">getBody</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p><strong>方案一</strong>：接下来正式进入秒杀系统最关键的部分,接下来看一段bug代码，深刻理解<code>数据库隔离级别</code>和<code>synchronized</code>锁，下面的代码貌似没有问题，在<code>Service</code>中开启事务然后用<code>synchronized</code>进行并发控制貌似是没有问题的，但是<code>SQL</code>的默认事务隔离级别是<code>可重复</code>读，先开事务再上锁就会有一个问题：</p>
+<pre><code class="prism language-java"><span class="token keyword">public</span> <span class="token keyword">class</span> secKillListener <span class="token keyword">implements</span> <span class="token class-name">RocketMQListener</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">MessageExt</span><span class="token punctuation">&gt;</span></span> <span class="token punctuation">{</span>
+
+    <span class="token annotation punctuation">@Autowired</span>
+    <span class="token keyword">private</span> <span class="token class-name">OrderRecordsService</span> orderRecordsService<span class="token punctuation">;</span>
+    <span class="token annotation punctuation">@Autowired</span>
+    <span class="token keyword">private</span> <span class="token class-name">RedisTemplate</span> redisTemplate<span class="token punctuation">;</span>
+
+    <span class="token keyword">private</span> <span class="token keyword">int</span> ZX_TIME <span class="token operator">=</span> <span class="token number">10000</span><span class="token punctuation">;</span>
+
+    <span class="token comment">/**
+     * 扣减库存，写进订单表
+     * boot项目报错就会重新消费，不报错就是消费成功
+     * @param messageExt
+     */</span>
+    <span class="token annotation punctuation">@Override</span>
+    <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">onMessage</span><span class="token punctuation">(</span><span class="token class-name">MessageExt</span> messageExt<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+        <span class="token class-name">String</span> message <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">String</span><span class="token punctuation">(</span>messageExt<span class="token punctuation">.</span><span class="token function">getBody</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">//String uk = goodId +"-"+userId;</span>
+        <span class="token class-name">Integer</span> goodId <span class="token operator">=</span> <span class="token class-name">Integer</span><span class="token punctuation">.</span><span class="token function">parseInt</span><span class="token punctuation">(</span>message<span class="token punctuation">.</span><span class="token function">split</span><span class="token punctuation">(</span><span class="token string">"-"</span><span class="token punctuation">)</span><span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name">Integer</span> userId <span class="token operator">=</span> <span class="token class-name">Integer</span><span class="token punctuation">.</span><span class="token function">parseInt</span><span class="token punctuation">(</span>message<span class="token punctuation">.</span><span class="token function">split</span><span class="token punctuation">(</span><span class="token string">"-"</span><span class="token punctuation">)</span><span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        orderRecordsService<span class="token punctuation">.</span><span class="token function">realSecKill</span><span class="token punctuation">(</span>goodId<span class="token punctuation">,</span>userId<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+
+    <span class="token comment">/**
+     * 真正处理秒杀的业务
+     * 减库存，写订单表
+     * @param goodId
+     * @param userId
+     */</span>
+    <span class="token annotation punctuation">@Override</span>
+    <span class="token annotation punctuation">@Transactional</span><span class="token punctuation">(</span>rollbackFor <span class="token operator">=</span> <span class="token class-name">Exception</span><span class="token punctuation">.</span><span class="token keyword">class</span><span class="token punctuation">)</span>
+    <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">realSecKill</span><span class="token punctuation">(</span><span class="token class-name">Integer</span> goodId<span class="token punctuation">,</span> <span class="token class-name">Integer</span> userId<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+        <span class="token comment">//this指的是OrderRecordsServiceImpl在boot项目中是单例的，可以上锁</span>
+        <span class="token keyword">synchronized</span> <span class="token punctuation">(</span><span class="token keyword">this</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+            <span class="token class-name">Goods</span> goods <span class="token operator">=</span> goodsMapper<span class="token punctuation">.</span><span class="token function">selectById</span><span class="token punctuation">(</span>goodId<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">int</span> finalStocks <span class="token operator">=</span> goods<span class="token punctuation">.</span><span class="token function">getStocks</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">-</span> <span class="token number">1</span><span class="token punctuation">;</span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>finalStocks <span class="token operator">&lt;</span> <span class="token number">0</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+                <span class="token keyword">throw</span> <span class="token keyword">new</span> <span class="token class-name">RuntimeException</span><span class="token punctuation">(</span><span class="token string">"商品库存不够"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            goods<span class="token punctuation">.</span><span class="token function">setStocks</span><span class="token punctuation">(</span>finalStocks<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            goods<span class="token punctuation">.</span><span class="token function">setUpdateTime</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token class-name">Date</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">int</span> i <span class="token operator">=</span> goodsMapper<span class="token punctuation">.</span><span class="token function">update</span><span class="token punctuation">(</span>goods<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>i <span class="token operator">&gt;</span> <span class="token number">0</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+                <span class="token comment">//写订单表</span>
+                <span class="token class-name">OrderRecords</span> orderRecords <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">OrderRecords</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                orderRecords<span class="token punctuation">.</span><span class="token function">setOrderSn</span><span class="token punctuation">(</span>UUID<span class="token punctuation">.</span><span class="token function">randomUUID</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">toString</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                orderRecords<span class="token punctuation">.</span><span class="token function">setGoodsId</span><span class="token punctuation">(</span>goodId<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                orderRecords<span class="token punctuation">.</span><span class="token function">setUserId</span><span class="token punctuation">(</span>userId<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                orderRecordsMapper<span class="token punctuation">.</span><span class="token function">insert</span><span class="token punctuation">(</span>orderRecords<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+</code></pre>
+<p>假如，AB线程都进入了，开始事务，这时候库存他们读的都是1000，根据<code>可重复</code>读，即使A拿到锁修改了数据，B再拿锁修改数据的时候，还是在原先的1000库存上进行修改，这样设计没有任何意义<br>
+<img src="https://i-blog.csdnimg.cn/direct/676123025c53453e9282972678fc1fcc.png" alt="在这里插入图片描述"><br>
+那该怎么修改呢？其实很简单，原先是顺序是<code>先开启事务，再进行上锁</code>这样数据库的隔离级别就会先发生作用，那我们<code>先上锁，在开启事务</code>这样就不会出现可重复读的问题了<br>
+但是要怎么实现呢？<code>@Transactional</code>是在Service上的注解啊，而锁必须锁代码或者方法,解决方法如下，在调用方进行上锁</p>
+<pre><code class="prism language-java"> <span class="token annotation punctuation">@Override</span>
+ <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">onMessage</span><span class="token punctuation">(</span><span class="token class-name">MessageExt</span> messageExt<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+     <span class="token class-name">String</span> message <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">String</span><span class="token punctuation">(</span>messageExt<span class="token punctuation">.</span><span class="token function">getBody</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+     <span class="token comment">//String uk = goodId +"-"+userId;</span>
+     <span class="token class-name">Integer</span> goodId <span class="token operator">=</span> <span class="token class-name">Integer</span><span class="token punctuation">.</span><span class="token function">parseInt</span><span class="token punctuation">(</span>message<span class="token punctuation">.</span><span class="token function">split</span><span class="token punctuation">(</span><span class="token string">"-"</span><span class="token punctuation">)</span><span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+     <span class="token class-name">Integer</span> userId <span class="token operator">=</span> <span class="token class-name">Integer</span><span class="token punctuation">.</span><span class="token function">parseInt</span><span class="token punctuation">(</span>message<span class="token punctuation">.</span><span class="token function">split</span><span class="token punctuation">(</span><span class="token string">"-"</span><span class="token punctuation">)</span><span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//        //所以要先加锁在开启事务-----方案一</span>
+<span class="token comment">//        //但是问题来了，这种根本不满足分布式，因为部署多个消费者系统就无法锁了，因为this指的单例是对应程序的单例</span>
+     <span class="token keyword">synchronized</span> <span class="token punctuation">(</span><span class="token keyword">this</span><span class="token punctuation">)</span><span class="token punctuation">{</span>
+         orderRecordsService<span class="token punctuation">.</span><span class="token function">realSecKill</span><span class="token punctuation">(</span>goodId<span class="token punctuation">,</span>userId<span class="token punctuation">)</span><span class="token punctuation">;</span>
+     <span class="token punctuation">}</span>
+  <span class="token punctuation">}</span>
+</code></pre>
+<p>但是这样设计就是天衣无缝了吗？这种根本不满足分布式，因为部署多个消费者系统就无法锁了，因为this指的单例是对应程序bean的单例</p>
+<p><strong>方案二</strong>：利用<code>数据库(innodb)的事务和行锁</code>来控制，但是压力都给到了数据库了,但是实现是最简单的，也是我再项目中经常用的</p>
+<pre><code class="prism language-java"><span class="token annotation punctuation">@Override</span>
+<span class="token annotation punctuation">@Transactional</span>
+<span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">realSecKill2</span><span class="token punctuation">(</span><span class="token class-name">Integer</span> goodId<span class="token punctuation">,</span> <span class="token class-name">Integer</span> userId<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+    <span class="token keyword">int</span> i <span class="token operator">=</span> goodsMapper<span class="token punctuation">.</span><span class="token function">desStock</span><span class="token punctuation">(</span>goodId<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">//update goods set stocks = stocks - 1 , update_time = now() where id = #{goodId} and stocks - 1 &gt;= 0是有行锁的goodId必须是唯一索引</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>i <span class="token operator">&gt;</span> <span class="token number">0</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+        <span class="token comment">//写订单表</span>
+        <span class="token class-name">OrderRecords</span> orderRecords <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">OrderRecords</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        orderRecords<span class="token punctuation">.</span><span class="token function">setOrderSn</span><span class="token punctuation">(</span>UUID<span class="token punctuation">.</span><span class="token function">randomUUID</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">toString</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        orderRecords<span class="token punctuation">.</span><span class="token function">setGoodsId</span><span class="token punctuation">(</span>goodId<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        orderRecords<span class="token punctuation">.</span><span class="token function">setUserId</span><span class="token punctuation">(</span>userId<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        orderRecordsMapper<span class="token punctuation">.</span><span class="token function">insert</span><span class="token punctuation">(</span>orderRecords<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>注意力放到这条SQL语句即可,利用了<code>innerDB</code>引擎对数据库的行锁进行数据库层面的控制，<code>update</code>语句会给数据库上行锁</p>
+<pre><code class="prism language-xml"> <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>update</span> <span class="token attr-name">id</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>desStock<span class="token punctuation">"</span></span><span class="token punctuation">&gt;</span></span>
+     update goods set stocks = stocks - 1 , update_time = now() where id = #{goodId} and stocks - 1 &gt;= 0
+ <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>update</span><span class="token punctuation">&gt;</span></span>
+</code></pre>
+<p><strong>方案三</strong>：使用<code>redis分布式锁+自旋锁CAS</code>实现,方法也特别的精巧，使用自旋锁思想让线程们循环等待redis分布式锁的释放实现线程同步，详细步骤见下面代码</p>
+<pre><code class="prism language-java"><span class="token keyword">private</span> <span class="token keyword">int</span> ZX_TIME <span class="token operator">=</span> <span class="token number">10000</span><span class="token punctuation">;</span>
+
+<span class="token comment">/**
+ * 扣减库存，写进订单表
+ * boot项目报错就会重新消费，不报错就是消费成功
+ * @param messageExt
+ */</span>
+<span class="token annotation punctuation">@Override</span>
+<span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">onMessage</span><span class="token punctuation">(</span><span class="token class-name">MessageExt</span> messageExt<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+    <span class="token class-name">String</span> message <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">String</span><span class="token punctuation">(</span>messageExt<span class="token punctuation">.</span><span class="token function">getBody</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">//String uk = goodId +"-"+userId;</span>
+    <span class="token class-name">Integer</span> goodId <span class="token operator">=</span> <span class="token class-name">Integer</span><span class="token punctuation">.</span><span class="token function">parseInt</span><span class="token punctuation">(</span>message<span class="token punctuation">.</span><span class="token function">split</span><span class="token punctuation">(</span><span class="token string">"-"</span><span class="token punctuation">)</span><span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token class-name">Integer</span> userId <span class="token operator">=</span> <span class="token class-name">Integer</span><span class="token punctuation">.</span><span class="token function">parseInt</span><span class="token punctuation">(</span>message<span class="token punctuation">.</span><span class="token function">split</span><span class="token punctuation">(</span><span class="token string">"-"</span><span class="token punctuation">)</span><span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">int</span> current <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+    <span class="token keyword">while</span> <span class="token punctuation">(</span>current <span class="token operator">&lt;=</span> ZX_TIME<span class="token punctuation">)</span><span class="token punctuation">{</span>
+        <span class="token comment">//Duration.ofSeconds(30)很精巧，防止单个线程宕机</span>
+        <span class="token class-name">Boolean</span> flag <span class="token operator">=</span> redisTemplate<span class="token punctuation">.</span><span class="token function">opsForValue</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">setIfAbsent</span><span class="token punctuation">(</span><span class="token string">"key:"</span><span class="token operator">+</span>goodId<span class="token punctuation">,</span><span class="token string">""</span><span class="token punctuation">,</span> <span class="token class-name">Duration</span><span class="token punctuation">.</span><span class="token function">ofSeconds</span><span class="token punctuation">(</span><span class="token number">30</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">if</span><span class="token punctuation">(</span>flag<span class="token punctuation">)</span><span class="token punctuation">{</span>
+            <span class="token comment">//拿到锁成功</span>
+            <span class="token keyword">try</span> <span class="token punctuation">{</span>
+                orderRecordsService<span class="token punctuation">.</span><span class="token function">realSecKill</span><span class="token punctuation">(</span>goodId<span class="token punctuation">,</span>userId<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token keyword">break</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span><span class="token keyword">finally</span> <span class="token punctuation">{</span>
+                <span class="token comment">//删除标记</span>
+                redisTemplate<span class="token punctuation">.</span><span class="token function">delete</span><span class="token punctuation">(</span><span class="token string">"key:"</span><span class="token operator">+</span>goodId<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span><span class="token keyword">else</span><span class="token punctuation">{</span>
+            <span class="token comment">//自旋锁等待线程,循环50次</span>
+            current <span class="token operator">+=</span> <span class="token number">200</span><span class="token punctuation">;</span>
+            <span class="token keyword">try</span> <span class="token punctuation">{</span>
+                <span class="token class-name">Thread</span><span class="token punctuation">.</span><span class="token function">sleep</span><span class="token punctuation">(</span><span class="token number">200</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span> <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">InterruptedException</span> e<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+                <span class="token keyword">throw</span> <span class="token keyword">new</span> <span class="token class-name">RuntimeException</span><span class="token punctuation">(</span>e<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+
+<span class="token punctuation">}</span>
+</code></pre>
+</div>
+</body>
+
+</html>
