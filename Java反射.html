@@ -1,0 +1,114 @@
+﻿<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Java反射</title>
+  <link rel="stylesheet" href="https://stackedit.io/style.css" />
+</head>
+
+<body class="stackedit">
+  <div class="stackedit__html"><h1><a id="_0"></a>反射</h1>
+<p><img src="https://i-blog.csdnimg.cn/direct/a648e18e452945dd99165b23c9686249.png" alt="在这里插入图片描述"><br>
+<img src="https://i-blog.csdnimg.cn/direct/7d47a15288e84a1b9751c02c75f096b0.png" alt="在这里插入图片描述"><br>
+成员变量，构造方法，成员方法都是从class字节码文件中获取，所以第一步要先获取class文件，然后可以解刨出修饰符等等信息。</p>
+<h2><a id="class_5"></a>获取class对象的三种方式</h2>
+<p>1、<code>Class.forName("全类名")</code><br>
+2、<code>类名.class</code><br>
+3、<code>对象.getClass()</code><br>
+在java程序的不同阶段，采取不同的方式<br>
+<img src="https://i-blog.csdnimg.cn/direct/91c3703f84534b2d8e9661595a20d880.png" alt="在这里插入图片描述"></p>
+<pre><code class="prism language-java"><span class="token comment">//方法一 全类名：包名 + 类名 最为常用</span>
+<span class="token class-name">Class</span> clazz <span class="token operator">=</span> <span class="token class-name">Class</span><span class="token punctuation">.</span><span class="token function">forName</span><span class="token punctuation">(</span><span class="token string">"com.yulong.Student"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//方法二 类名.class 一般作参数</span>
+<span class="token class-name">Class</span> clazz <span class="token operator">=</span> <span class="token class-name">Student</span><span class="token punctuation">.</span><span class="token keyword">class</span><span class="token punctuation">;</span>
+<span class="token comment">//方法三 一般只有已经有实例对象才用</span>
+<span class="token class-name">Student</span> s <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">Student</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token class-name">Class</span> clazz <span class="token operator">=</span> s<span class="token punctuation">.</span><span class="token function">getClass</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<h2><a id="_20"></a>通过字节码对象获取构造方法</h2>
+<p>Class类中用于获取构造方法的方法</p>
+<pre><code class="prism language-java"><span class="token class-name">Class</span> clazz <span class="token operator">=</span> <span class="token class-name">Class</span><span class="token punctuation">.</span><span class="token function">forName</span><span class="token punctuation">(</span><span class="token string">"com.miniBili.entity.po.VideoInfo"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p><code>Constructor&lt;?&gt;[] getConstructors()</code>返回所有公共(public)构造方法对象的数组</p>
+<pre><code class="prism language-java"><span class="token class-name">Constructor</span><span class="token punctuation">[</span><span class="token punctuation">]</span> constructors <span class="token operator">=</span> clazz<span class="token punctuation">.</span><span class="token function">getConstructors</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p><code>Constructor&lt;?&gt;[] getDeclaredConstructors()</code>返回所有构造方法对象的数组</p>
+<pre><code class="prism language-java"><span class="token class-name">Constructor</span><span class="token punctuation">[</span><span class="token punctuation">]</span> declaredConstructors <span class="token operator">=</span> clazz<span class="token punctuation">.</span><span class="token function">getDeclaredConstructors</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p><code>Constructor&lt;T&gt; getConstructor(Class&lt;?&gt;....parameterTypes)</code> 返回单个公共构造方法对象</p>
+<pre><code class="prism language-java"><span class="token comment">//获取空参构造</span>
+<span class="token class-name">Constructor</span> constructor <span class="token operator">=</span> clazz<span class="token punctuation">.</span><span class="token function">getConstructor</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//获取其他构造方法,根据参数决定是哪个（函数的重载）</span>
+<span class="token class-name">Constructor</span> <span class="token class-name">Stringcon</span> <span class="token operator">=</span> clazz<span class="token punctuation">.</span><span class="token function">getConstructor</span><span class="token punctuation">(</span><span class="token class-name">String</span><span class="token punctuation">.</span><span class="token keyword">class</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p><code>Constructor&lt;T&gt; getDeclareConstructor(Class&lt;?&gt;....parameterTypes)</code> 返回单个公共构造方法对象</p>
+<pre><code class="prism language-java"><span class="token comment">//和上面的基本一样</span>
+<span class="token class-name">Constructor</span> declaredConstructor <span class="token operator">=</span> clazz<span class="token punctuation">.</span><span class="token function">getDeclaredConstructor</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>根据<strong>Constructor类</strong>可以获取该构造方法的修饰符，参数信息等等</p>
+<p>Constructor类中用于创建对象的方法<br>
+<code>T newInstance(Object... initargs)</code>:根据指定的构造方法创建对象</p>
+<pre><code class="prism language-java"><span class="token comment">//一定要和创建constructor1的参数对应上，但是private的对象不能直接用</span>
+<span class="token class-name">VideoInfo</span> v <span class="token operator">=</span> <span class="token punctuation">(</span><span class="token class-name">VideoInfo</span><span class="token punctuation">)</span>constructor1<span class="token punctuation">.</span><span class="token function">newInstance</span><span class="token punctuation">(</span><span class="token string">"test"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p><code>setAccessible(boolean flag)</code>:设置为true，表示取消访问检查</p>
+<pre><code class="prism language-java"><span class="token comment">//暴力反射</span>
+declaredConstructor<span class="token punctuation">.</span><span class="token function">setAccessible</span><span class="token punctuation">(</span><span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//这样子就可以了</span>
+<span class="token class-name">VideoInfo</span> v <span class="token operator">=</span> <span class="token punctuation">(</span><span class="token class-name">VideoInfo</span><span class="token punctuation">)</span>declaredConstructor<span class="token punctuation">.</span><span class="token function">newInstance</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<h2><a id="_61"></a>通过字节码对象获取成员变量</h2>
+<p>Class类中用于获取成员变量的方法,获取成员变量就可以进一步获取他的修饰符，数据类型，值等等<br>
+<code>Field[] getFields()</code>返回所有公共成员变量对象的数组</p>
+<pre><code class="prism language-java"><span class="token class-name">Field</span><span class="token punctuation">[</span><span class="token punctuation">]</span> fields <span class="token operator">=</span> clazz<span class="token punctuation">.</span><span class="token function">getFields</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p><code>Field[] getDeclareFields()</code>返回所有成员变量对象的数组</p>
+<pre><code class="prism language-java"><span class="token class-name">Field</span><span class="token punctuation">[</span><span class="token punctuation">]</span> declaredFields <span class="token operator">=</span> clazz<span class="token punctuation">.</span><span class="token function">getDeclaredFields</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p><code>Field getField(String name)</code>返回单个公共成员变量对象，name是变量名</p>
+<pre><code class="prism language-java"><span class="token class-name">Field</span> videoId <span class="token operator">=</span> clazz<span class="token punctuation">.</span><span class="token function">getField</span><span class="token punctuation">(</span><span class="token string">"videoId"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//获取权限修饰符,字段名，数据类型</span>
+ <span class="token keyword">int</span> modifiers <span class="token operator">=</span> videoId<span class="token punctuation">.</span><span class="token function">getModifiers</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+ <span class="token class-name">String</span> name <span class="token operator">=</span> videoId<span class="token punctuation">.</span><span class="token function">getName</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+ <span class="token class-name">Class</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token operator">?</span><span class="token punctuation">&gt;</span></span> type <span class="token operator">=</span> videoId<span class="token punctuation">.</span><span class="token function">getType</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p><code>Field getDeclareField(String name)</code>返回单个成员变量对象<br>
+Field类中用于创建对象的方法<br>
+<code>void set(Object obj,Object value)</code>：修改对象里面的值</p>
+<pre><code class="prism language-java">videoId<span class="token punctuation">.</span><span class="token function">setAccessible</span><span class="token punctuation">(</span><span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token class-name">VideoInfo</span> videoInfo1 <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">VideoInfo</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+videoId<span class="token punctuation">.</span><span class="token function">set</span><span class="token punctuation">(</span>videoInfo1<span class="token punctuation">,</span><span class="token string">"值"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p><code>Object get(Object obj)</code>：获取值，必须传递他的一个对象才能获取这个对象的这个字段的值</p>
+<pre><code class="prism language-java">videoId<span class="token punctuation">.</span><span class="token function">setAccessible</span><span class="token punctuation">(</span><span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token class-name">VideoInfo</span> videoInfo1 <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">VideoInfo</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token class-name">Object</span> o <span class="token operator">=</span> videoId<span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span>videoInfo1<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<h2><a id="_93"></a>通过字节码对象获取成员方法</h2>
+<p>Class类中用于获取成员变量的方法<br>
+<code>Method[] getMerhods()</code>返回所有公共成员方法对象数组，包括父类中所有的公共方法</p>
+<pre><code class="prism language-java"><span class="token class-name">Method</span><span class="token punctuation">[</span><span class="token punctuation">]</span> methods <span class="token operator">=</span> clazz<span class="token punctuation">.</span><span class="token function">getMethods</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p><code>Method[] getDeclareMerhods()</code>返回所有成员方法数组，无法获取父类的任何方法</p>
+<pre><code class="prism language-java"><span class="token class-name">Method</span><span class="token punctuation">[</span><span class="token punctuation">]</span> declaredMethods <span class="token operator">=</span> clazz<span class="token punctuation">.</span><span class="token function">getDeclaredMethods</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p><code>Method getMerhod(String name,Class&lt;?&gt;....parameterTypes)</code>返回单个公共方法对象</p>
+<pre><code class="prism language-java"><span class="token class-name">Method</span> setVideoId <span class="token operator">=</span> clazz<span class="token punctuation">.</span><span class="token function">getMethod</span><span class="token punctuation">(</span><span class="token string">"setVideoId"</span><span class="token punctuation">,</span> <span class="token class-name">String</span><span class="token punctuation">.</span><span class="token keyword">class</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//获取方法的修饰符</span>
+<span class="token keyword">int</span> modifiers <span class="token operator">=</span> setVideoId<span class="token punctuation">.</span><span class="token function">getModifiers</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//获取方法的名字</span>
+<span class="token class-name">String</span> name <span class="token operator">=</span> setVideoId<span class="token punctuation">.</span><span class="token function">getName</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//获取方法的形参，获取形参数组</span>
+arameter<span class="token punctuation">[</span><span class="token punctuation">]</span> parameters <span class="token operator">=</span> setVideoId<span class="token punctuation">.</span><span class="token function">getParameters</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//获取方法抛出的异常</span>
+<span class="token class-name">Class</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token operator">?</span><span class="token punctuation">&gt;</span></span><span class="token punctuation">[</span><span class="token punctuation">]</span> exceptionTypes <span class="token operator">=</span> setVideoId<span class="token punctuation">.</span><span class="token function">getExceptionTypes</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p><code>Method getDeclareMerhod(String name,Class&lt;?&gt;....parameterTypes)</code>返回单个对象</p>
+<pre><code class="prism language-java"><span class="token class-name">Method</span> declaredMethod <span class="token operator">=</span> clazz<span class="token punctuation">.</span><span class="token function">getDeclaredMethod</span><span class="token punctuation">(</span><span class="token string">"setVideoId"</span><span class="token punctuation">,</span> <span class="token class-name">String</span><span class="token punctuation">.</span><span class="token keyword">class</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+</div>
+</body>
+
+</html>

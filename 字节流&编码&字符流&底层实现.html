@@ -1,0 +1,212 @@
+﻿<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>字节流&amp;编码&amp;字符流&amp;底层实现</title>
+  <link rel="stylesheet" href="https://stackedit.io/style.css" />
+</head>
+
+<body class="stackedit">
+  <div class="stackedit__html"><p></p><div class="toc"><h3>文章目录</h3><ul><ul><li><a href="#IO_3">IO的简单概念</a></li><li><a href="#_12">字节输出流基本用法</a></li><li><a href="#_60">字节输入流基本用法</a></li><li><a href="#_131">字符集详解</a></li><li><a href="#java_150">java编码解码</a></li><li><a href="#_158">字符输入流</a></li><li><a href="#_198">字符输出流</a></li><li><a href="#_205">字符流原理解析</a></li></ul></ul></div><br>
+<code>正式学一下IO流，之前一直是瞎胡用，没有系统学过</code><p></p>
+<h2><a id="IO_3"></a>IO的简单概念</h2>
+<p><strong>IO流的分类：</strong><br>
+<img src="https://i-blog.csdnimg.cn/direct/71f91cb441f94ec78a6a9423764b9a42.png" alt="在这里插入图片描述"><br>
+纯文本文件：window自带的记事本打开就能读懂的 txt md是纯文本文件，而word excel不是，<strong>只能用字节流操作</strong></p>
+<p><strong>IO流体系结构</strong><br>
+<img src="https://i-blog.csdnimg.cn/direct/4991dab8aee2418baa40fd2e0eeb2228.png" alt="在这里插入图片描述"><br>
+字节流的实现类<br>
+<img src="https://i-blog.csdnimg.cn/direct/f903d4961ec941339a56e1db968d4c87.png" alt="在这里插入图片描述"></p>
+<h2><a id="_12"></a>字节输出流基本用法</h2>
+<p><code>注意细节</code><br>
+1、创建字节流输出对象</p>
+<ul>
+<li>参数是路径or File类</li>
+<li>文件不存在会创建一个文件，但是父级目录必须存在</li>
+<li>如果文件存在会清空文件的</li>
+</ul>
+<p>2、write方法参数输入整数的时候，会写入对应的<code>ASCII</code>值</p>
+<p>3、每次使用完要释放资源</p>
+<pre><code class="prism language-java"> <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">void</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token class-name">String</span><span class="token punctuation">[</span><span class="token punctuation">]</span> args<span class="token punctuation">)</span> <span class="token keyword">throws</span> <span class="token class-name">IOException</span> <span class="token punctuation">{</span>
+     <span class="token class-name">FileOutputStream</span> fos <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">FileOutputStream</span><span class="token punctuation">(</span><span class="token string">"E/"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+     fos<span class="token punctuation">.</span><span class="token function">write</span><span class="token punctuation">(</span><span class="token number">97</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+     fos<span class="token punctuation">.</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+ <span class="token punctuation">}</span>
+</code></pre>
+<p><strong>写出数据的方法</strong><br>
+<img src="https://i-blog.csdnimg.cn/direct/218018ba90f64ab4b077eadb7257f6ce.png" alt="在这里插入图片描述"></p>
+<pre><code class="prism language-java"><span class="token comment">//一个中文占3字节</span>
+<span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">void</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token class-name">String</span><span class="token punctuation">[</span><span class="token punctuation">]</span> args<span class="token punctuation">)</span> <span class="token keyword">throws</span> <span class="token class-name">IOException</span> <span class="token punctuation">{</span>
+    <span class="token class-name">FileOutputStream</span> fos <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">FileOutputStream</span><span class="token punctuation">(</span><span class="token string">"E:\\program\\JavaCourse\\a.txt"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    fos<span class="token punctuation">.</span><span class="token function">write</span><span class="token punctuation">(</span><span class="token string">"这是一个测试"</span><span class="token punctuation">.</span><span class="token function">getBytes</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span><span class="token number">0</span><span class="token punctuation">,</span><span class="token number">3</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    fos<span class="token punctuation">.</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p><strong>那我要是想换行或者续写该怎么整？</strong></p>
+<p>我先获取一下工作目录，绝对路径麻烦死了</p>
+<pre><code class="prism language-java"><span class="token class-name">String</span> currentDir <span class="token operator">=</span> <span class="token class-name">System</span><span class="token punctuation">.</span><span class="token function">getProperty</span><span class="token punctuation">(</span><span class="token string">"user.dir"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span><span class="token string">"当前工作目录: "</span> <span class="token operator">+</span> currentDir<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p><code>续写方法</code>只用在创建输出字节流多一个true就行</p>
+<pre><code class="prism language-java"><span class="token class-name">FileOutputStream</span> fos2 <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">FileOutputStream</span><span class="token punctuation">(</span><span class="token string">"a.txt"</span><span class="token punctuation">,</span><span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+fos2<span class="token punctuation">.</span><span class="token function">write</span><span class="token punctuation">(</span><span class="token string">"拼接数据"</span><span class="token punctuation">.</span><span class="token function">getBytes</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+fos2<span class="token punctuation">.</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p><code>换行</code>输入一个换行符就行了</p>
+<ul>
+<li>windows \r\n</li>
+<li>linux \n</li>
+<li>mac \r</li>
+</ul>
+<h2><a id="_60"></a>字节输入流基本用法</h2>
+<p><code>注意点</code>文件不存在会报错,一次<code>read</code>只会读一个字节，返回这个字节的<code>ASCII码</code>值，所以中文按照下面的代码读是乱码（一个中文3字节）,读到结束会返回<code>-1</code></p>
+<pre><code class="prism language-java"><span class="token class-name">FileInputStream</span> fis <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">FileInputStream</span><span class="token punctuation">(</span><span class="token string">"a.txt"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">int</span> b<span class="token punctuation">;</span>
+<span class="token keyword">while</span><span class="token punctuation">(</span><span class="token punctuation">(</span>b<span class="token operator">=</span>fis<span class="token punctuation">.</span><span class="token function">read</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token operator">!=</span><span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">{</span>
+   <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token keyword">char</span><span class="token punctuation">)</span>b<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+fis<span class="token punctuation">.</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p><code>小点</code>换行符也能读出来 13 是<code>\r</code> 14是<code>\n</code>，但是按照上面代码控制台会直接换行<br>
+下面这种读法是有问题的，<code>fis.read()</code>读完一次指针就指向下一个字节了，每次循环就会跳过一个字节</p>
+<pre><code class="prism language-java"><span class="token class-name">FileInputStream</span> fis <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">FileInputStream</span><span class="token punctuation">(</span><span class="token string">"a.txt"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">while</span><span class="token punctuation">(</span><span class="token punctuation">(</span>fis<span class="token punctuation">.</span><span class="token function">read</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token operator">!=</span><span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">{</span>
+    <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span>fis<span class="token punctuation">.</span><span class="token function">read</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>最简单的文件拷贝方法，容易出错，效率很低<br>
+<code>先启动的流后关闭</code></p>
+<pre><code class="prism language-java"><span class="token class-name">FileInputStream</span> fis <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">FileInputStream</span><span class="token punctuation">(</span><span class="token string">"a.txt"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token class-name">FileOutputStream</span> fos <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">FileOutputStream</span><span class="token punctuation">(</span><span class="token string">"b.txt"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">int</span> b<span class="token punctuation">;</span>
+<span class="token keyword">while</span><span class="token punctuation">(</span><span class="token punctuation">(</span>b <span class="token operator">=</span> fis<span class="token punctuation">.</span><span class="token function">read</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token operator">!=</span><span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">{</span>
+    fos<span class="token punctuation">.</span><span class="token function">write</span><span class="token punctuation">(</span>b<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+fos<span class="token punctuation">.</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+fis<span class="token punctuation">.</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p><img src="https://i-blog.csdnimg.cn/direct/5079d2e64e8d47f1940a684674cdd334.png" alt="在这里插入图片描述"><br>
+速度慢的原因就是每次只读了一个字节就写入,改进方式将一次读的数据读到byte数组中,<code>len=fis.read(b)</code><strong>每次读不会清0数组再写入，而是直接在对应位置替换数据</strong>，<code>len</code>返回的是读取字节数<code>fos.write(b,0,len);</code>写入b数组的0~len位，如果不写<code>0,len</code>呢？最后一次读取的不满len，所有byte数组len以后会有上次读的残余数据，不写len就写进去了</p>
+<pre><code class="prism language-java"><span class="token class-name">FileInputStream</span> fis <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">FileInputStream</span><span class="token punctuation">(</span><span class="token string">"a.txt"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token class-name">FileOutputStream</span> fos <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">FileOutputStream</span><span class="token punctuation">(</span><span class="token string">"b.txt"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">int</span> len<span class="token punctuation">;</span>
+<span class="token comment">//5MB字节空间</span>
+<span class="token keyword">byte</span> b<span class="token punctuation">[</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token keyword">byte</span><span class="token punctuation">[</span><span class="token number">1024</span><span class="token operator">*</span><span class="token number">1024</span><span class="token operator">*</span><span class="token number">5</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+<span class="token keyword">while</span><span class="token punctuation">(</span><span class="token punctuation">(</span>len<span class="token operator">=</span>fis<span class="token punctuation">.</span><span class="token function">read</span><span class="token punctuation">(</span>b<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token operator">!=</span><span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">{</span>
+    fos<span class="token punctuation">.</span><span class="token function">write</span><span class="token punctuation">(</span>b<span class="token punctuation">,</span><span class="token number">0</span><span class="token punctuation">,</span>len<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+fos<span class="token punctuation">.</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+fis<span class="token punctuation">.</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>但是上面这种写法还是不安全</p>
+<ul>
+<li>资源泄漏风险：如果读写过程中抛出异常，close()方法不会被执行</li>
+<li>缺乏异常处理：无法正确处理IOException等 checked exception</li>
+<li>不够健壮：文件不存在、磁盘满、权限问题等都会导致程序崩溃</li>
+</ul>
+<p>标准写法：以后就这么写了</p>
+<pre><code class="prism language-java"><span class="token comment">// 使用 try-with-resources 自动关闭流</span>
+<span class="token keyword">try</span> <span class="token punctuation">(</span><span class="token class-name">FileInputStream</span> fis <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">FileInputStream</span><span class="token punctuation">(</span><span class="token string">"a.txt"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+     <span class="token class-name">FileOutputStream</span> fos <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">FileOutputStream</span><span class="token punctuation">(</span><span class="token string">"b.txt"</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+
+    <span class="token keyword">int</span> len<span class="token punctuation">;</span>
+    <span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token punctuation">(</span>len <span class="token operator">=</span> fis<span class="token punctuation">.</span><span class="token function">read</span><span class="token punctuation">(</span>buffer<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token operator">!=</span> <span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+        fos<span class="token punctuation">.</span><span class="token function">write</span><span class="token punctuation">(</span>buffer<span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> len<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">// 可选：强制刷新缓冲区，立刻写入磁盘</span>
+    <span class="token comment">//说实话这个没用，字节流是没有缓冲区的，写也没用</span>
+    fos<span class="token punctuation">.</span><span class="token function">flush</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token punctuation">}</span> <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">IOException</span> e<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+    <span class="token comment">// 异常处理</span>
+    <span class="token class-name">System</span><span class="token punctuation">.</span>err<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span><span class="token string">"文件复制失败："</span> <span class="token operator">+</span> e<span class="token punctuation">.</span><span class="token function">getMessage</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    e<span class="token punctuation">.</span><span class="token function">printStackTrace</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h2><a id="_131"></a>字符集详解</h2>
+<p>中文为什么会乱码呢？<br>
+计算机中，最小的存储单位是一字节，8比特，一个字节就可以存放一个英文字母了，流程如下<br>
+<img src="https://i-blog.csdnimg.cn/direct/f50291d7a96e494ab8dfaeb7669bc735.png" alt="在这里插入图片描述"><br>
+那中文呢？ASCII表里没有汉字，所有要有一个汉字字符集来对应编码和汉字的对应关系<br>
+<strong>GBK编码</strong><br>
+<img src="https://i-blog.csdnimg.cn/direct/df080692b5a6421a8cde2840abbb21b5.png" alt="在这里插入图片描述"><br>
+<img src="https://i-blog.csdnimg.cn/direct/ed8e09631bf04d05acbd6276ecd0ef1b.png" alt="在这里插入图片描述"><br>
+<img src="https://i-blog.csdnimg.cn/direct/fd930888d51e4fb38ea092cc232aa231.png" alt="在这里插入图片描述"><br>
+<img src="https://i-blog.csdnimg.cn/direct/778a987279204749804f6c04f91633e2.png" alt="在这里插入图片描述"><br>
+<strong>unicode编码</strong><br>
+<img src="https://i-blog.csdnimg.cn/direct/22a14fbded564c719b99e1e9bd3aa9b6.png" alt="在这里插入图片描述"><br>
+<img src="https://i-blog.csdnimg.cn/direct/848c091394cc4f2381573c93a0aa03bc.png" alt="在这里插入图片描述"><br>
+怪不得我之前写的时候发现中文是三字节，因为我用的就是UTF-8编码<br>
+<img src="https://i-blog.csdnimg.cn/direct/e167e01c2b33491fb0c6addc3ec8fbb0.png" alt="在这里插入图片描述"><br>
+<strong>接下来就很清楚字节流读中文为什么会乱码了吧</strong>。但是用字节流拷贝文件啥的是没有影响的，因为字节们又拼一块了，就可以识别了，只能单个读会有问题<br>
+那我们用不同字符集打开一个文本时为什么会乱码呢<br>
+<img src="https://i-blog.csdnimg.cn/direct/7c0a885915f54023b5d1e22f42575448.png" alt="在这里插入图片描述"><br>
+<img src="https://i-blog.csdnimg.cn/direct/628264e3fc1344e295bcfa18fc9e8f6e.png" alt="在这里插入图片描述"></p>
+<h2><a id="java_150"></a>java编码解码</h2>
+<p><img src="https://i-blog.csdnimg.cn/direct/3bda10527cc841a0921281fe3f1d9a4a.png" alt="在这里插入图片描述"></p>
+<pre><code class="prism language-java"> <span class="token class-name">String</span> jiema <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">String</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token keyword">byte</span><span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">{</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+ <span class="token keyword">byte</span><span class="token punctuation">[</span><span class="token punctuation">]</span> bytes <span class="token operator">=</span> <span class="token string">"编码"</span><span class="token punctuation">.</span><span class="token function">getBytes</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p><code>学不动了。字符流啥的先欠着…………………………</code></p>
+<h2><a id="_158"></a>字符输入流</h2>
+<p><strong>字符流底层上就是字节流</strong><br>
+输入流： 一次读一个字节，遇到中文时，一次读多个字节<br>
+输出流：底层会把数据按照指定方式进行编码，变成字节再写入到文件中<br>
+<strong>使用场景</strong> 对于<strong>纯文本文件</strong>进行读写操作<br>
+<img src="https://i-blog.csdnimg.cn/direct/b53bbc283c0f4774b0a42a95686bbc1f.png" alt="在这里插入图片描述"><br>
+<img src="https://i-blog.csdnimg.cn/direct/48e05027f83341ed84677bade16dd93f.png" alt="在这里插入图片描述"><br>
+操作方法和字节流其实是一样的：创建流对象，读取数据，关闭资源</p>
+<p><strong>创建对象</strong><br>
+<code>public FIleReader(File file)</code> 文件<br>
+<code>public FileReader(String pathName)</code>文件路径<br>
+<strong>读取数据</strong><br>
+<code>public int read()</code> 读到末尾 返回-1<br>
+1、底层也是字节流，也是默认一个字节一个字节的读取，如果遇到中文就会读取多个GBK是2字节，UTF-8是三字节<br>
+2、在读取之后，方法底层将解码为<code>十进制</code>并返回，所以需要对他进行强转<code>(char)ch</code></p>
+<pre><code class="prism language-java"> <span class="token class-name">FileReader</span> fr <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">FileReader</span><span class="token punctuation">(</span><span class="token string">"a.txt"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+ <span class="token keyword">int</span> ch<span class="token punctuation">;</span>
+ <span class="token keyword">while</span><span class="token punctuation">(</span><span class="token punctuation">(</span>ch<span class="token operator">=</span>fr<span class="token punctuation">.</span><span class="token function">read</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token operator">!=</span><span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">{</span>
+     <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token keyword">char</span><span class="token punctuation">)</span>ch<span class="token punctuation">)</span><span class="token punctuation">;</span>
+ <span class="token punctuation">}</span>
+ fr<span class="token punctuation">.</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p><code>public int read(char[] buffer)</code>读取多个数据，末尾返回-1<br>
+1、读取数据，解码，强转三者合并了，将<strong>字符放入char数组</strong>中<br>
+2、返回的int值是读取的长度，注意是字符长度，而字节流是字节的长度</p>
+<pre><code class="prism language-java"><span class="token class-name">FileReader</span> fr <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">FileReader</span><span class="token punctuation">(</span><span class="token string">"a.txt"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">char</span> buffer<span class="token punctuation">[</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token keyword">char</span><span class="token punctuation">[</span><span class="token number">5</span><span class="token operator">*</span><span class="token number">1024</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+<span class="token keyword">int</span> len<span class="token punctuation">;</span>
+<span class="token keyword">while</span><span class="token punctuation">(</span><span class="token punctuation">(</span>len<span class="token operator">=</span>fr<span class="token punctuation">.</span><span class="token function">read</span><span class="token punctuation">(</span>buffer<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token operator">!=</span><span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">{</span>
+    <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token class-name">String</span><span class="token punctuation">(</span>buffer<span class="token punctuation">,</span><span class="token number">0</span><span class="token punctuation">,</span>len<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p><strong>关闭资源</strong><br>
+<code>public void close()</code></p>
+<h2><a id="_198"></a>字符输出流</h2>
+<p>创建方法<br>
+<img src="https://i-blog.csdnimg.cn/direct/d3896ae4eb7f4d7e9b80a7bdff840303.png" alt="在这里插入图片描述"><br>
+写出方法<br>
+<img src="https://i-blog.csdnimg.cn/direct/701e2ebe0461470aa78df4889d4cb73d.png" alt="在这里插入图片描述"></p>
+<p>其实很简单没有什么难度</p>
+<h2><a id="_205"></a>字符流原理解析</h2>
+<p><code>了解一些原理还是非常重要的</code><br>
+<img src="https://i-blog.csdnimg.cn/direct/37282e8e57144f898ef66dd7f7f48826.png" alt="在这里插入图片描述"><br>
+在创建字符输入流的时候，内存中会开辟一个长度为8192大小的缓冲区<br>
+<img src="https://i-blog.csdnimg.cn/direct/91896882bfa54bbb919dfbaf27c2dacb.png" alt="在这里插入图片描述"><br>
+每次读取的的时候，会先判断缓冲区是否有数据，如果有直接读取，如果没有会磁盘IO然后尽可能的充满缓冲区<br>
+<code>字节流是没有缓存区的，这也就是字符流和字节流，即使都是一个字节一个字节的读，速度差距还是特别大</code><br>
+这个代码有意思奥<br>
+<img src="https://i-blog.csdnimg.cn/direct/3f76a89b878f4e0bbb3dbf0430d53460.png" alt="在这里插入图片描述"><br>
+输出流也是有缓冲区，先往缓冲区写，然后在刷硬盘<br>
+<img src="https://i-blog.csdnimg.cn/direct/47c0393d478e4b46b57d170b10ea6c12.png" alt="在这里插入图片描述"><br>
+本质上，字符流效率高的原因就是大大减少磁盘IO次数，什么情况会刷硬盘呢？<br>
+<code>flush</code>缓冲区没有满但也强制刷硬盘，<code>close</code>关闭资源，缓冲区已满</p>
+<p><code>我天，学到这么可真gb醍醐灌顶</code></p>
+</div>
+</body>
+
+</html>

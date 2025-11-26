@@ -1,0 +1,178 @@
+﻿<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mybits高级映射：resultMap,多对一,一对多</title>
+  <link rel="stylesheet" href="https://stackedit.io/style.css" />
+</head>
+
+<body class="stackedit">
+  <div class="stackedit__html"><p></p><div class="toc"><h3>文章目录</h3><ul><li><a href="#resultMap_2">resultMap结果映射</a></li><li><a href="#_54">多对一映射</a></li><ul><li><a href="#_69">级联属性映射</a></li><li><a href="#associate_83">associate</a></li><li><a href="#_88">分布查询</a></li></ul><li><a href="#_129">一对多映射</a></li><ul><li><a href="#collection_143">collection</a></li><li><a href="#_166">分步查询</a></li></ul></ul></div><p></p>
+<h1><a id="resultMap_2"></a>resultMap结果映射</h1>
+<br>
+查询结果和java对象的属性名对不上怎么办？
+<ul>
+<li>as起别名</li>
+<li>resultMap进行结果映射</li>
+</ul>
+<p>以下是一个实体映射配置示例，其中column对应数据库字段名，property对应实体类属性名。配置主键可以提升查询效率：</p>
+<pre><code class="prism language-java">	<span class="token operator">&lt;</span><span class="token operator">!</span><span class="token operator">--</span>实体映射<span class="token operator">--</span><span class="token operator">&gt;</span>
+	<span class="token operator">&lt;</span>resultMap id<span class="token operator">=</span><span class="token string">"base_result_map"</span> type<span class="token operator">=</span><span class="token string">"com.miniBili.entity.po.VideoComment"</span><span class="token operator">&gt;</span>
+		<span class="token operator">&lt;</span><span class="token operator">!</span><span class="token operator">--</span>评论id<span class="token operator">--</span><span class="token operator">&gt;</span>
+		<span class="token operator">&lt;</span>id column<span class="token operator">=</span><span class="token string">"comment_id"</span> property<span class="token operator">=</span><span class="token string">"commentId"</span>  <span class="token operator">/</span><span class="token operator">&gt;</span>
+		<span class="token operator">&lt;</span><span class="token operator">!</span><span class="token operator">--</span>父级评论id<span class="token operator">--</span><span class="token operator">&gt;</span>
+		<span class="token operator">&lt;</span>result column<span class="token operator">=</span><span class="token string">"p_comment_id"</span> property<span class="token operator">=</span><span class="token string">"pCommentId"</span>  <span class="token operator">/</span><span class="token operator">&gt;</span>
+		<span class="token operator">&lt;</span><span class="token operator">!</span><span class="token operator">--</span>视频id<span class="token operator">--</span><span class="token operator">&gt;</span>
+		<span class="token operator">&lt;</span>result column<span class="token operator">=</span><span class="token string">"video_id"</span> property<span class="token operator">=</span><span class="token string">"videoId"</span>  <span class="token operator">/</span><span class="token operator">&gt;</span>
+		<span class="token operator">&lt;</span><span class="token operator">!</span><span class="token operator">--</span>视频用户id<span class="token operator">--</span><span class="token operator">&gt;</span>
+		<span class="token operator">&lt;</span>result column<span class="token operator">=</span><span class="token string">"video_user_id"</span> property<span class="token operator">=</span><span class="token string">"videoUserId"</span>  <span class="token operator">/</span><span class="token operator">&gt;</span>
+		<span class="token operator">&lt;</span><span class="token operator">!</span><span class="token operator">--</span>回复内容<span class="token operator">--</span><span class="token operator">&gt;</span>
+		<span class="token operator">&lt;</span>result column<span class="token operator">=</span><span class="token string">"content"</span> property<span class="token operator">=</span><span class="token string">"content"</span>  <span class="token operator">/</span><span class="token operator">&gt;</span>
+		<span class="token operator">&lt;</span><span class="token operator">!</span><span class="token operator">--</span>图片<span class="token operator">--</span><span class="token operator">&gt;</span>
+		<span class="token operator">&lt;</span>result column<span class="token operator">=</span><span class="token string">"img_path"</span> property<span class="token operator">=</span><span class="token string">"imgPath"</span>  <span class="token operator">/</span><span class="token operator">&gt;</span>
+		<span class="token operator">&lt;</span><span class="token operator">!</span><span class="token operator">--</span>用户id<span class="token operator">--</span><span class="token operator">&gt;</span>
+		<span class="token operator">&lt;</span>result column<span class="token operator">=</span><span class="token string">"user_id"</span> property<span class="token operator">=</span><span class="token string">"userId"</span>  <span class="token operator">/</span><span class="token operator">&gt;</span>
+		<span class="token operator">&lt;</span><span class="token operator">!</span><span class="token operator">--</span>回复人id<span class="token operator">--</span><span class="token operator">&gt;</span>
+		<span class="token operator">&lt;</span>result column<span class="token operator">=</span><span class="token string">"reply_user_id"</span> property<span class="token operator">=</span><span class="token string">"replyUserId"</span>  <span class="token operator">/</span><span class="token operator">&gt;</span>
+		<span class="token operator">&lt;</span><span class="token operator">!</span><span class="token operator">--</span><span class="token number">0</span>未置顶<span class="token number">1</span>置顶<span class="token operator">--</span><span class="token operator">&gt;</span>
+		<span class="token operator">&lt;</span>result column<span class="token operator">=</span><span class="token string">"top_type"</span> property<span class="token operator">=</span><span class="token string">"topType"</span>  <span class="token operator">/</span><span class="token operator">&gt;</span>
+		<span class="token operator">&lt;</span><span class="token operator">!</span><span class="token operator">--</span>发布时间<span class="token operator">--</span><span class="token operator">&gt;</span>
+		<span class="token operator">&lt;</span>result column<span class="token operator">=</span><span class="token string">"post_time"</span> property<span class="token operator">=</span><span class="token string">"postTime"</span>  <span class="token operator">/</span><span class="token operator">&gt;</span>
+		<span class="token operator">&lt;</span><span class="token operator">!</span><span class="token operator">--</span>喜欢数量<span class="token operator">--</span><span class="token operator">&gt;</span>
+		<span class="token operator">&lt;</span>result column<span class="token operator">=</span><span class="token string">"like_count"</span> property<span class="token operator">=</span><span class="token string">"likeCount"</span>  <span class="token operator">/</span><span class="token operator">&gt;</span>
+		<span class="token operator">&lt;</span><span class="token operator">!</span><span class="token operator">--</span>讨厌数量<span class="token operator">--</span><span class="token operator">&gt;</span>
+		<span class="token operator">&lt;</span>result column<span class="token operator">=</span><span class="token string">"hate_count"</span> property<span class="token operator">=</span><span class="token string">"hateCount"</span>  <span class="token operator">/</span><span class="token operator">&gt;</span>
+	<span class="token operator">&lt;</span><span class="token operator">/</span>resultMap<span class="token operator">&gt;</span>
+</code></pre>
+<p>如何使用呢？类似下面代码，设置resultMap="base_result_map”</p>
+<pre><code class="prism language-java">	<span class="token operator">&lt;</span><span class="token operator">!</span><span class="token operator">--</span> 查询集合<span class="token operator">--</span><span class="token operator">&gt;</span>
+	<span class="token operator">&lt;</span>select id<span class="token operator">=</span><span class="token string">"selectList"</span> resultMap<span class="token operator">=</span><span class="token string">"base_result_map"</span> <span class="token operator">&gt;</span>
+		 SELECT <span class="token operator">&lt;</span>include refid<span class="token operator">=</span><span class="token string">"base_column_list"</span> <span class="token operator">/</span><span class="token operator">&gt;</span> FROM video_comment v <span class="token operator">&lt;</span>include refid<span class="token operator">=</span><span class="token string">"query_condition"</span> <span class="token operator">/</span><span class="token operator">&gt;</span>
+		 <span class="token operator">&lt;</span><span class="token keyword">if</span> test<span class="token operator">=</span><span class="token string">"query.orderBy!=null"</span><span class="token operator">&gt;</span>
+			 order by $<span class="token punctuation">{</span>query<span class="token punctuation">.</span>orderBy<span class="token punctuation">}</span>
+		 <span class="token operator">&lt;</span><span class="token operator">/</span><span class="token keyword">if</span><span class="token operator">&gt;</span>
+		 <span class="token operator">&lt;</span><span class="token keyword">if</span> test<span class="token operator">=</span><span class="token string">"query.simplePage!=null"</span><span class="token operator">&gt;</span>
+			 limit #<span class="token punctuation">{</span>query<span class="token punctuation">.</span>simplePage<span class="token punctuation">.</span>start<span class="token punctuation">}</span><span class="token punctuation">,</span>#<span class="token punctuation">{</span>query<span class="token punctuation">.</span>simplePage<span class="token punctuation">.</span>end<span class="token punctuation">}</span>
+		 <span class="token operator">&lt;</span><span class="token operator">/</span><span class="token keyword">if</span><span class="token operator">&gt;</span>
+	<span class="token operator">&lt;</span><span class="token operator">/</span>select<span class="token operator">&gt;</span>
+</code></pre>
+<h1><a id="_54"></a>多对一映射</h1>
+<p>首先准备一个数据库，多个学生对应一个班级<br>
+<img src="https://i-blog.csdnimg.cn/direct/c3a7b775514847dba025524e42c1677e.png" alt="在这里插入图片描述"><br>
+在一对多的关系中，数据库多的一方要加外键，在示例中就是学生表cid外键关联班级表的cid<br>
+<strong>首先要明白一个关系：谁是主表谁是附表，然后才能开始ORM映射</strong><br>
+多对一：多在前，那么多就是主表<br>
+一对多：一在前，那么一就是主表<br>
+主表是谁就在java中写那个对象，下图示例了多对一关系，按照这个关系设计实体类即可<br>
+<img src="https://i-blog.csdnimg.cn/direct/ac1afac7bdae477ca475da7ce017ca89.png" alt="在这里插入图片描述"><br>
+接下里如何用mybatis实现呢？</p>
+<ul>
+<li>方式一：一条SQL，级联属性映射</li>
+<li>方式二：一条SQL，associate</li>
+<li>方式三：两条SQL，分步查询。这种方式常用，优点可复用，支持懒加载</li>
+</ul>
+<h2><a id="_69"></a>级联属性映射</h2>
+<p><img src="https://i-blog.csdnimg.cn/direct/ad14e4a687474c42989f8d1ec9eb3e98.png" alt="在这里插入图片描述"><br>
+这个其实挺简单没啥意思，类似下面，其实就是把Student里的class信息的每个字段放进map里行了</p>
+<pre><code class="prism language-java">	<span class="token operator">&lt;</span>select id<span class="token operator">=</span><span class="token string">""</span> resultType<span class="token operator">=</span><span class="token string">""</span><span class="token operator">&gt;</span>
+		<span class="token operator">&lt;</span>id property<span class="token operator">=</span><span class="token string">"sid"</span> column<span class="token operator">=</span><span class="token string">""</span><span class="token operator">/</span><span class="token operator">&gt;</span>
+		<span class="token operator">&lt;</span>result property<span class="token operator">=</span><span class="token string">"sname"</span> column<span class="token operator">=</span><span class="token string">""</span><span class="token operator">/</span><span class="token operator">&gt;</span>
+		<span class="token operator">&lt;</span>result property<span class="token operator">=</span><span class="token string">"clazz.cid"</span> column<span class="token operator">=</span><span class="token string">""</span><span class="token operator">/</span><span class="token operator">&gt;</span>
+		<span class="token operator">&lt;</span>result property<span class="token operator">=</span><span class="token string">"clazz.cname"</span> column<span class="token operator">=</span><span class="token string">""</span><span class="token operator">/</span><span class="token operator">&gt;</span>
+	<span class="token operator">&lt;</span><span class="token operator">/</span>select<span class="token operator">&gt;</span>
+</code></pre>
+<p>然后两张表关联查询就行了<br>
+<img src="https://i-blog.csdnimg.cn/direct/1a01ac8706bb458f97473e86aaadbe69.png" alt="在这里插入图片描述"></p>
+<h2><a id="associate_83"></a>associate</h2>
+<p>和第一种差不多，我觉得更直观一点，还是使用resultMap里设计，里面用associate标签，封装class类，type应该是resultType,记录存放的实体类<br>
+<img src="https://i-blog.csdnimg.cn/direct/b60e9362b6e541c791058b1a59aaaacc.png" alt="在这里插入图片描述"><br>
+SQL查询还是两张表关联查<br>
+<img src="https://i-blog.csdnimg.cn/direct/1a01ac8706bb458f97473e86aaadbe69.png" alt="在这里插入图片描述"></p>
+<h2><a id="_88"></a>分布查询</h2>
+<p>第一步;先根据学生的sid查询学生的信息,然后在association 标签里进行对class的查询，其实就是个子查询喔</p>
+<pre><code class="prism language-java"><span class="token class-name">Student</span> <span class="token function">selectByidStep</span><span class="token punctuation">(</span><span class="token class-name">Integer</span> id<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<pre><code class="prism language-xml"><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>resultMap</span> <span class="token attr-name">id</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>studentStep<span class="token punctuation">"</span></span> <span class="token attr-name">resultType</span> <span class="token attr-value"><span class="token punctuation attr-equals">=</span> <span class="token punctuation">"</span><span class="token punctuation">"</span></span><span class="token punctuation">&gt;</span></span>
+	<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>id</span> <span class="token attr-name">property</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>sid<span class="token punctuation">"</span></span> <span class="token attr-name">column</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>sid<span class="token punctuation">"</span></span><span class="token punctuation">/&gt;</span></span>
+	<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>result</span> <span class="token attr-name">property</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>sname<span class="token punctuation">"</span></span> <span class="token attr-name">column</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>sname<span class="token punctuation">"</span></span><span class="token punctuation">/&gt;</span></span>
+	<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>association</span> <span class="token attr-name">property</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>clazz<span class="token punctuation">"</span></span> 
+			     <span class="token attr-name">select</span> <span class="token attr-value"><span class="token punctuation attr-equals">=</span> <span class="token punctuation">"</span>这里需要指定另外第二步SQL语句的id  路径全名...selectByidStep2<span class="token punctuation">"</span></span>
+			     <span class="token attr-name">column</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>指定给这条SQL传的参数 cid<span class="token punctuation">"</span></span> 
+			     <span class="token attr-name">fetchType</span> <span class="token attr-value"><span class="token punctuation attr-equals">=</span> <span class="token punctuation">"</span>lazy<span class="token punctuation">"</span></span> <span class="token attr-name">懒加载</span><span class="token punctuation">/&gt;</span></span>
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>resultMap</span><span class="token punctuation">&gt;</span></span> 
+
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>select</span> <span class="token attr-name">id</span> <span class="token attr-value"><span class="token punctuation attr-equals">=</span> <span class="token punctuation">"</span>selectByidStep<span class="token punctuation">"</span></span> <span class="token attr-name">resultMap</span> <span class="token attr-value"><span class="token punctuation attr-equals">=</span> <span class="token punctuation">"</span>...studentStep<span class="token punctuation">"</span></span><span class="token punctuation">&gt;</span></span>
+	select sid,s_name,cid from t_stu where sid = #{sid}
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>select</span><span class="token punctuation">&gt;</span></span>
+
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>select</span> <span class="token attr-name">id</span> <span class="token attr-value"><span class="token punctuation attr-equals">=</span> <span class="token punctuation">"</span>selectByidStep2<span class="token punctuation">"</span></span> <span class="token attr-name">resultMap</span> <span class="token attr-value"><span class="token punctuation attr-equals">=</span> <span class="token punctuation">"</span>...Class<span class="token punctuation">"</span></span><span class="token punctuation">&gt;</span></span>
+	select cid,c_name from t_class where cid = #{cid}
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>select</span><span class="token punctuation">&gt;</span></span>
+</code></pre>
+<p>延迟加载的核心原理是：<strong>按需查询</strong>，仅在真正需要数据时才执行SQL查询，避免不必要的资源消耗。</p>
+<p>在MyBatis中实现懒加载非常简单，只需在<code>&lt;association&gt;</code>或<code>&lt;collection&gt;</code>标签中设置<code>fetchType="lazy"</code>属性即可启用延迟加载机制。</p>
+<p>示例，有点神奇了说是</p>
+<pre><code class="prism language-java"><span class="token class-name">Student</span> stu <span class="token operator">=</span> <span class="token function">selectByidStep</span><span class="token punctuation">(</span>id<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//sout(stu)//这个情况两条SQL都执行</span>
+<span class="token function">sout</span><span class="token punctuation">(</span>stu<span class="token punctuation">.</span>getCname<span class="token punctuation">)</span><span class="token comment">//没用班级信息解决不执行第二条SQL</span>
+<span class="token comment">//那么好玩的来了，如果我继续sout(stu.clazz.getCname),之前获取stu对象的时候可是没有执行第二条SQL的，是没有班级信息的</span>
+<span class="token function">sout</span><span class="token punctuation">(</span>stu<span class="token punctuation">.</span>clazz<span class="token punctuation">.</span>getCname<span class="token punctuation">)</span>
+</code></pre>
+<p><img src="https://i-blog.csdnimg.cn/direct/8603829fa011416288bb72b193bcfca2.png" alt="在这里插入图片描述"></p>
+<h1><a id="_129"></a>一对多映射</h1>
+<p>一对多的实现中，通常是在一方中有另一方的List集合属性</p>
+<pre><code class="prism language-java"><span class="token keyword">private</span> <span class="token keyword">class</span> clazz<span class="token punctuation">{</span>
+	<span class="token keyword">private</span> <span class="token class-name">Integer</span> cid<span class="token punctuation">;</span>
+	<span class="token keyword">private</span> <span class="token class-name">String</span> cname<span class="token punctuation">;</span>
+	<span class="token keyword">private</span> <span class="token class-name">List</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">Student</span><span class="token punctuation">&gt;</span></span> stuList<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>一对多的映射通常包括两种实现方式<br>
+第一种：collection<br>
+第二种：分步查询</p>
+<h2><a id="collection_143"></a>collection</h2>
+<pre><code class="prism language-java"><span class="token class-name">Clazz</span> <span class="token function">selectById</span><span class="token punctuation">(</span><span class="token class-name">Integer</span> cid<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<pre><code class="prism language-xml"><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>resultMap</span> <span class="token attr-name">id</span> <span class="token attr-value"><span class="token punctuation attr-equals">=</span> <span class="token punctuation">"</span>clazzResultMap<span class="token punctuation">"</span></span> <span class="token attr-name">resultType</span> <span class="token attr-value"><span class="token punctuation attr-equals">=</span> <span class="token punctuation">"</span><span class="token punctuation">"</span></span><span class="token punctuation">&gt;</span></span>
+	<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>id</span> <span class="token attr-name">property</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>cid<span class="token punctuation">"</span></span> <span class="token attr-name">column</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>cid<span class="token punctuation">"</span></span><span class="token punctuation">/&gt;</span></span>
+	<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>result</span> <span class="token attr-name">property</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>cname<span class="token punctuation">"</span></span> <span class="token attr-name">column</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>cname<span class="token punctuation">"</span></span><span class="token punctuation">/&gt;</span></span>
+	<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>collection</span> <span class="token attr-name">property</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>stuList<span class="token punctuation">"</span></span> <span class="token attr-name">ofType</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>用来指定集合中元素的类型<span class="token punctuation">"</span></span><span class="token punctuation">&gt;</span></span>
+		<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>id</span> <span class="token attr-name">property</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>sid<span class="token punctuation">"</span></span> <span class="token attr-name">column</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>sid<span class="token punctuation">"</span></span><span class="token punctuation">/&gt;</span></span>
+		<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>result</span> <span class="token attr-name">property</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>sname<span class="token punctuation">"</span></span> <span class="token attr-name">column</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>sname<span class="token punctuation">"</span></span><span class="token punctuation">/&gt;</span></span>
+	<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>collection</span><span class="token punctuation">&gt;</span></span>&gt;
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>resultMap</span><span class="token punctuation">&gt;</span></span>
+
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>select</span> <span class="token attr-name">id</span> <span class="token attr-value"><span class="token punctuation attr-equals">=</span> <span class="token punctuation">"</span>selectById<span class="token punctuation">"</span></span> <span class="token attr-name">resultMap</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>clazzResultMap<span class="token punctuation">"</span></span><span class="token punctuation">&gt;</span></span>
+	select c.cid,c.cname,s.sid,s.sname from clazz c
+	left join stu s on stu.cid = c.cid
+	where c.cid = #{cid}
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>select</span><span class="token punctuation">&gt;</span></span>
+</code></pre>
+<h2><a id="_166"></a>分步查询</h2>
+<pre><code class="prism language-java"><span class="token class-name">Clazz</span> <span class="token function">selectBystep</span><span class="token punctuation">(</span><span class="token class-name">Integer</span> cid<span class="token punctuation">)</span>
+</code></pre>
+<pre><code class="prism language-xml"><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>resultMap</span> <span class="token attr-name">id</span> <span class="token attr-value"><span class="token punctuation attr-equals">=</span> <span class="token punctuation">"</span>clazzResultMap<span class="token punctuation">"</span></span> <span class="token attr-name">resultType</span> <span class="token attr-value"><span class="token punctuation attr-equals">=</span> <span class="token punctuation">"</span>Clazz<span class="token punctuation">"</span></span><span class="token punctuation">&gt;</span></span>
+	<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>id</span> <span class="token attr-name">property</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>cid<span class="token punctuation">"</span></span> <span class="token attr-name">column</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>cid<span class="token punctuation">"</span></span><span class="token punctuation">/&gt;</span></span>
+	<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>result</span> <span class="token attr-name">property</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>cname<span class="token punctuation">"</span></span> <span class="token attr-name">column</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>cname<span class="token punctuation">"</span></span><span class="token punctuation">/&gt;</span></span>
+	<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>collection</span> <span class="token attr-name">property</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>stuList selectBystep2记得用全路径<span class="token punctuation">"</span></span> 
+				<span class="token attr-name">select</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>查询学生的SQL<span class="token punctuation">"</span></span>
+				<span class="token attr-name">column</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>cid<span class="token punctuation">"</span></span><span class="token punctuation">&gt;</span></span>
+	<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>collection</span><span class="token punctuation">&gt;</span></span>&gt;
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>resultMap</span><span class="token punctuation">&gt;</span></span>
+
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>select</span> <span class="token attr-name">id</span> <span class="token attr-value"><span class="token punctuation attr-equals">=</span> <span class="token punctuation">"</span>selectBystep<span class="token punctuation">"</span></span> <span class="token attr-name">resultMap</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>clazzResultMap<span class="token punctuation">"</span></span><span class="token punctuation">&gt;</span></span>
+	select c.cid,c.cname from clazz c
+	where c.cid = #{cid}
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>select</span><span class="token punctuation">&gt;</span></span>
+
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>select</span> <span class="token attr-name">id</span> <span class="token attr-value"><span class="token punctuation attr-equals">=</span> <span class="token punctuation">"</span>selectBystep2<span class="token punctuation">"</span></span> <span class="token attr-name">resulttype</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>..Student<span class="token punctuation">"</span></span><span class="token punctuation">&gt;</span></span>
+	select s.sid,s.sname,s.cid from stu
+	where s.cid = #{cid}
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>select</span><span class="token punctuation">&gt;</span></span>
+</code></pre>
+</div>
+</body>
+
+</html>
