@@ -1,0 +1,36 @@
+logging:
+  level:
+    # 指定 feign 接口所在的包的日志级别为 debug 级别
+    indi.mofan.order.feign: debug
+
+spring:
+  cloud:
+    openfeign:
+      client:
+        config:
+          # 默认配置
+          default:
+            logger-level: full
+            connect-timeout: 1000
+            read-timeout: 2000
+          # 具体 feign 客户端的超时配置
+          service-product:
+            logger-level: full
+            # 连接超时，3000 毫秒
+            connect-timeout: 3000
+            # 读取超时，5000 毫秒
+            read-timeout: 5000
+#            该请求拦截器仅对当前客户端有效
+#            request-interceptors:
+#              - indi.mofan.order.interceptor.XTokenRequestInterceptor
+    sentinel:
+      transport:
+        dashboard: localhost:8080
+      eager: true
+      # 支持流控模式的链路模式
+      web-context-unify: false
+
+# 开启熔断
+feign:
+  sentinel:
+    enabled: true

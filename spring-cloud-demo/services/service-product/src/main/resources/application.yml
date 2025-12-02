@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: service-product
+  cloud:
+    nacos:
+      # 配置 Nacos 地址
+      server-addr: 127.0.0.1:8848
+      config:
+        import-check:
+          # 禁用 nacos 配置中心导入检查
+          enabled: false
+    sentinel:
+      transport:
+        dashboard: localhost:8080
+      eager: true
+
+
+server:
+  port: 9000

@@ -1,0 +1,53 @@
+spring:
+  cloud:
+    gateway:
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowed-origin-patterns: '*'
+            allowed-headers: '*'
+            allowedMethods: '*'
+      routes:
+        - id: bing-route
+          uri: https://cn.bing.com
+          predicates:
+            - name: Path
+              args:
+                patterns: /search
+            - name: Query
+              args:
+                param: q
+                regexp: haha
+            # - Vip=user,mofan
+            - name: Vip
+              args:
+                param: user
+                value: mofan
+          order: 10
+          # id 全局唯一
+        - id: order-route
+          # 指定服务名称
+          uri: lb://service-order
+          # 指定断言规则，即路由匹配规则
+          # Fully Expanded Arguments
+          predicates:
+            - name: Path
+              args:
+                patterns: /api/order/**
+                matchTrailingSlash: true
+          filters:
+            # 类似把 /api/order/a/bc 重写为 /a/bc，移除路径前的 /api/order/
+            - RewritePath=/api/order/?(?<segment>.*), /$\{segment}
+            # 自定义过滤器
+            - OnceToken=X-Response-Token, uuid
+          order: 1
+        - id: product-route
+          uri: lb://service-product
+          # Shortcut Configuration
+          predicates:
+            - Path=/api/product/**
+          filters:
+            - RewritePath=/api/product/?(?<segment>.*), /$\{segment}
+          order: 2
+      default-filters:
+        - AddResponseHeader=X-Response-Abc, 123

@@ -1,0 +1,46 @@
+server:
+  port: 8000
+
+spring:
+  profiles:
+    active: dev
+    include: feign
+  application:
+    name: service-order
+  cloud:
+    nacos:
+      # 配置 Nacos 地址
+      server-addr: 127.0.0.1:8848
+      config:
+        namespace: ${spring.profiles.active:public}
+        import-check:
+          enabled: false
+
+---
+spring:
+  config:
+    import:
+      - nacos:common.yaml?group=order
+      - nacos:database.yaml?group=order
+    activate:
+      on-profile: dev
+
+---
+spring:
+  config:
+    import:
+      - nacos:common.yaml?group=order
+      - nacos:database.yaml?group=order
+      - nacos:haha.yaml?group=order
+    activate:
+      on-profile: test
+
+---
+spring:
+  config:
+    import:
+      - nacos:common.yaml?group=order
+      - nacos:database.yaml?group=order
+      - nacos:hehe.yaml?group=order
+    activate:
+      on-profile: prod
