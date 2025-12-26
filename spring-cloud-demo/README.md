@@ -751,13 +751,33 @@ public Order seckill(@RequestParam(value = "userId", required = false) Long user
 
 ## 4.1 路由
 
+网关必须配置的三项依赖
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-web</artifactId>
+</dependency>
+
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-test</artifactId>
+    <scope>test</scope>
+</dependency>
+不配这个会导致503
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-loadbalancer</artifactId>
+</dependency>
+```
+
 需求：
 
 1. 客户端发送 `/api/order/**` 转到 `service-order`
 2. 客户端发送 `/api/product/**` 转到 `service-product`
 3. 以上转发有负载均衡效果
 
-配置路由规则时，可直接在配置文件中完成：
+配置路由规则时，可直接在配置文件application-rount.yml中完成：
 
 ```yaml
 spring:
@@ -768,10 +788,11 @@ spring:
           uri: https://cn.bing.com
           predicates:
             - Path=/**
+          # 顺序越小，优先级越高
           order: 10
           # id 全局唯一
         - id: order-route
-          # 指定服务名称
+          # 指定服务名称，必须是网关注册名
           uri: lb://service-order
           # 指定断言规则，即路由匹配规则
           predicates:
@@ -789,6 +810,8 @@ Gateway 路由的工作原理如下：
 ![Gateway路由的工作原理](/ATT/img/Gateway路由的工作原理.svg)
 
 ## 4.2 断言
+
+请求是否符合你定义的规则
 
 官方文档：[Route Predicate Factories](https://docs.spring.io/spring-cloud-gateway/reference/spring-cloud-gateway/request-predicates-factories.html)
 
@@ -867,7 +890,11 @@ spring:
 
 尽管 Gateway 内置了许多断言规则，但依旧难以满足千变万化的需求。
 
-在上述规则的基础上，再指定一个名为 `Vip` 的断言规则，要求存在名为 `user` 的请求参数，并且值为 `mofan` 时才将请求跳转到 `https://cn.bing.com`：
+在上述规则的基础上，再指定一个名为 `Vip` 的断言规则，需要重新**定义一个断言工厂**
+
+工厂类命名不能随便写，**断言名+RoutePredicateFactory**否则无法识别
+
+要求存在名为 `user` 的请求参数，并且值为 `mofan` 时才将请求跳转到 `https://cn.bing.com`：
 
 ```yaml
 spring:
@@ -894,19 +921,23 @@ spring:
  * @author mofan
  * @date 2025/4/29 22:49
  */
+//泛型代表着断言工厂的配置，使用内部类进行
 @Component
 public class VipRoutePredicateFactory extends AbstractRoutePredicateFactory<VipRoutePredicateFactory.Config> {
 
 
+    //告诉断言工厂使用这个配置类
     public VipRoutePredicateFactory() {
         super(Config.class);
     }
 
+    //短格式的属性顺序Vip=user,mofan
     @Override
     public List<String> shortcutFieldOrder() {
         return List.of("param", "value");
     }
 
+    //最重要部分，满足规则算法serverWebExchange里面封装了请求和相应
     @Override
     public Predicate<ServerWebExchange> apply(Config config) {
         return (GatewayPredicate) serverWebExchange -> {
@@ -917,6 +948,7 @@ public class VipRoutePredicateFactory extends AbstractRoutePredicateFactory<VipR
         };
     }
 
+    //
     @Validated
     @Getter
     @Setter
@@ -1017,6 +1049,7 @@ public class RtGlobalFilter implements GlobalFilter, Ordered {
                 });
     }
 
+    //设置order优先级
     @Override
     public int getOrder() {
         return 0;
@@ -1111,7 +1144,7 @@ spring:
 
 ![Seata演示示例分布式事务解决方案.](/ATT/img/Seata演示示例分布式事务解决方案.png)
 
-- TC：Transaction Coordinator，即事务协调者。维护全局和分支事务的状态，驱动全局事务提交或回滚；
+- TC：Transaction Coordinator，即事务协调者。维护全局和分支事务的状态，驱动**全局事务提交或回滚；**
 - TM：Transaction Manager，即事务管理器。定义全局事务的范围，开始全局事务、提交或回滚全局事务；
 - RM：Resource Manager，即资源管理器。管理分支事务处理的资源，与 TC 交谈以注册分支事务和报告分支事务的状态，并驱动分支事务提交或回滚。
 
@@ -1128,7 +1161,7 @@ spring:
 </dependency>
 ```
 
-在需要使用 Seata 的模块中添加 Seata 的配置文件 `file.conf` ：
+在需要使用 Seata 的模块中添加 Seata 的配置文件 `file.conf`，和application.yml是同一级的 ：
 
 ```properties
 service {
