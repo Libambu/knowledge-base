@@ -316,6 +316,8 @@ public static void main(String[] args) {
 
 14、删除单链表倒数第n的节点
 
+[19. 删除链表的倒数第 N 个结点 - 力扣（LeetCode）](https://leetcode.cn/problems/remove-nth-node-from-end-of-list/?envType=problem-list-v2&envId=2cktkvj&)
+
 15、分割回文串
 
 16、lc53 最大子数组和
