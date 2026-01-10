@@ -19,7 +19,7 @@
 “在技术架构上，我采用了 **Spring Cloud Alibaba** 微服务体系。
 之所以这么选型，不是为了拆分而拆分，主要是考虑到**业务属性的差异**：
 比如‘视频转码’是 CPU 密集型的重任务，而‘点赞评论’是高并发 IO 的轻任务。
-通过微服务将它们拆开，利用 **Nacos** 和 **Gateway** 进行治理，主要是为了实现**故障隔离**，防止后台转码把前台的登录服务拖垮。”
+通过微服务将它们拆开，利用 **Nacos** 和 **Gateway** 进行治理，主要是为了实现**故障隔离**，防止后台转码把前台的登录服务拖垮。
 *(点到为止，表明你懂微服务的核心目的就是解耦，然后立马转折)*
 
 **(3. 抛出诱饵 —— 引导提问)**
@@ -290,6 +290,24 @@
 
 
 
+
+
+### 在视频观看在线人数部分，你的人数是用redis记录的的，那么怎么解决热Key问题？
+
+**因为 Redis 集群是按 Key 的 Hash 值分片的。如果几十万并发全部打向同一个 Key（如 video:888:online），那么巨大的写压力（QPS）会全部集中在**某一个 Redis 分片节点**上，导致该节点 CPU 飙升、连接打满，甚至宕机，而其他节点却很空闲，这就是‘单点瓶颈’。”
+
+**(2. 核心方案：Key 的分片（Sharding）策略)**
+“针对计数类的热 Key，最成熟的解决方案是**‘Key 拆分（Sharding）’**。
+我不把所有计数都记在一个 Key 上，而是把这个热 Key **拆分成 N 个子 Key**。
+
+- **具体实现：**
+  - 假设热 Key 是 video:888:online，我把它拆分为 100 个子 Key：video:888:online:0 到 video:888:online:99。
+  - **写逻辑（分散）：** 当用户心跳到来时，后端代码**随机**生成一个 0~99 的后缀，比如随机到了 5，就对 video:888:online:5 执行 INCR 和 EXPIRE。这样就把流量均匀打散到了 Redis 集群的不同节点上。
+  - **读逻辑（聚合）：** 当需要查询总人数时，后端并行查询这 100 个子 Key，把它们的值**累加**起来，就是当前的总在线人数。
+- **权衡：** 这是一个‘写快读慢’的策略，非常符合在线人数‘高频写、低频读’的业务特征。”
+
+
+
 ### 你的定时任务是分布式的吗？怎么防止多台机器重复写数据库？
 
 
@@ -483,3 +501,204 @@ return serverHttpResponse.writeWith(Mono.just(dataBuffer));
 }
 ```
 
+
+
+
+
+太棒了！你的思路调整得非常快，也非常准。
+
+**“在线人数”**主要是写 Redis，确实不容易引出数据库层面的问题。
+而**“视频详情播放接口（`getVideoInfo`）”**是标准的 **`查 Redis -> 缺 -> 查 MySQL -> 回写 Redis`** 流程，简直就是为**缓存三兄弟（穿透、击穿、雪崩）**量身定做的“案发现场”。
+
+我们可以用一个**“爆款视频诞生记”**的故事线，把这三个问题串起来讲给面试官听。
+
+---
+
+### 🎙️ 面试话术：在视频播放接口如何应对缓存三大难题
+
+**面试官：** “你的视频播放接口 QPS 很高，如果缓存出了问题，会对数据库造成什么影响？”
+
+**你的回答（场景带入）：**
+“在我的 miniBili 项目中，`getVideoInfo` 是流量最大的核心接口。为了减轻 MySQL 压力，我加了 Redis 缓存。
+针对高并发场景，我专门设计了方案来应对三个极端的缓存问题，我们可以把它想象成一个**‘爆款视频’**可能会遇到的三次危机。”
+
+---
+
+#### 1. 危机一：缓存穿透 (Cache Penetration) —— 黑客攻击
+**场景：** “假设有黑客写脚本，疯狂请求 `videoId = -1` 或者 `videoId = 99999999` 这种数据库里根本不存在的 ID。”
+
+*   **问题：** Redis 查不到，请求直接穿透到 MySQL。因为 MySQL 也没数据，所以不会回写 Redis。每次请求都会打到数据库，导致数据库宕机。
+*   **我的解决方案（回空值 + 校验）：**
+    1.  **接口层拦截：** 我在 Controller 层做了参数校验，对于 id < 0 的直接拦截。
+    2.  **缓存空对象（Cache Null）：** 如果请求一个不存在的 ID，数据库查回来是 null，我依然会在 Redis 里存一个**空值（Empty Object）**，并设置一个较短的过期时间（比如 5 分钟）。这样下次黑客再查，Redis 直接返回空，保护了数据库。
+    3.  **进阶思考（布隆过滤器）：** 如果 ID 过于离散（比如 UUID），缓存空值会浪费内存。未来我会引入 **Redisson 的布隆过滤器**，在查 Redis 前先判断 ID 是否存在，不存在直接返回。
+
+---
+
+#### 2. 危机二：缓存击穿 (Cache Breakdown) —— 爆款失效
+**场景：** “假设有一个**超级热点视频**（比如‘周杰伦新歌MV’），几百万人正在同时请求。突然，这个视频在 Redis 里的 Key **过期时间到了**。”
+
+*   **问题：** 在缓存失效的瞬间，几百万个读请求发现 Redis 没数据，会同时涌入 MySQL 去重建缓存。数据库瞬间连接打满，直接挂掉。
+*   **我的解决方案（互斥锁 Mutex Lock）：**
+    *   我使用了 **Redisson 分布式锁** 来解决这个问题。
+    *   **流程：** 当发现 Redis 里没有视频数据时，线程不是直接去查 DB，而是先尝试获取锁（`tryLock`）。
+    *   **抢到锁的线程：** 去查询 MySQL，并将数据回写到 Redis，然后释放锁。
+    *   **没抢到锁的线程：** 休眠一小会儿（Thread.sleep），然后重试查询 Redis（此时大概率已经有数据了）。
+    *   **兜底：** 这样保证了同一时刻，针对同一个热点视频，**只有一个请求**会打到数据库。
+
+    *(备注：字节也喜欢听“逻辑过期”方案，如果你熟可以说，不熟就守住分布式锁这个点，因为你简历写了。)*
+
+
+
+```java
+ /**
+     * 获取视频详情（解决缓存击穿 - setIfAbsent版）
+     */
+    public VideoInfo getVideoInfo(String videoId) {
+        String cacheKey = CACHE_PREFIX + videoId;
+
+        // 1. 【查询缓存】
+        String cacheValue = stringRedisTemplate.opsForValue().get(cacheKey);
+        if (StringUtils.isNotBlank(cacheValue)) {
+            // 解决缓存穿透的空对象判断
+            if ("{}".equals(cacheValue)) {
+                return null;
+            }
+            return convertJsonToObj(cacheValue, VideoInfo.class);
+        }
+
+        // 2. 【缓存未命中，准备重建】开始抢锁
+        String lockKey = LOCK_PREFIX + videoId;
+        // 使用 UUID 作为锁的值，防止误删别人的锁
+        String uuid = UUID.randomUUID().toString();
+
+        try {
+            // 3. 【加锁】 (原子性操作：SETNX + EXPIRE)
+            // 参数：Key, Value, 过期时间, 时间单位
+            // 对应命令：SET lock:video:123 uuid EX 10 NX
+            Boolean isLocked = stringRedisTemplate.opsForValue()
+                    .setIfAbsent(lockKey, uuid, 10, TimeUnit.SECONDS);
+
+            // 4. 【抢到锁】执行查库逻辑
+            if (Boolean.TRUE.equals(isLocked)) {
+                try {
+                    // 4.1 【双重检查 (Double Check)】 关键点！
+                    // 可能在你抢锁的过程中，别的线程已经把数据写进 Redis 了
+                    // 如果不查，你又去查一遍 DB，锁就白加了
+                    String doubleCheck = stringRedisTemplate.opsForValue().get(cacheKey);
+                    if (StringUtils.isNotBlank(doubleCheck)) {
+                        if ("{}".equals(doubleCheck)) return null;
+                        return convertJsonToObj(doubleCheck, VideoInfo.class);
+                    }
+
+                    // 4.2 查询数据库
+                    VideoInfo dbData = videoInfoMapper.selectById(videoId);
+
+                    // 4.3 回写 Redis
+                    if (dbData == null) {
+                        // 解决缓存穿透：存空值，过期时间短（如 5 分钟）
+                        stringRedisTemplate.opsForValue().set(cacheKey, "{}", 300, TimeUnit.SECONDS);
+                    } else {
+                        // 解决缓存雪崩：设置随机 TTL (1小时 + 随机数)
+                        long ttl = 3600 + new Random().nextInt(1800);
+                        stringRedisTemplate.opsForValue()
+                                .set(cacheKey, convertObjToJson(dbData), ttl, TimeUnit.SECONDS);
+                    }
+
+                    return dbData;
+
+                } finally {
+                    // 5. 【释放锁】 (解铃还须系铃人)
+                    // 获取当前锁的值，判断是不是自己加的
+                    String currentLockVal = stringRedisTemplate.opsForValue().get(lockKey);
+                    if (uuid.equals(currentLockVal)) {
+                        // 是自己的锁，才删除
+                        stringRedisTemplate.delete(lockKey);
+                    }
+                    // 注意：上面这两步在极端高并发下不是原子的，
+                    // 面试加分项：说“更完美是可以用 Lua 脚本来保证原子删除”，但写 Java 代码这样足够了
+                }
+            } else {
+                // 6. 【没抢到锁】 休眠重试
+                try {
+                    // 稍微睡一下，防止 CPU 空转
+                    Thread.sleep(50);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                // 自旋重试（递归调用）
+                return getVideoInfo(videoId);
+            }
+
+        } catch (Exception e) {
+            log.error("缓存重建异常", e);
+            throw new RuntimeException("系统繁忙");
+        }
+    }
+```
+
+
+
+如果面试官问你：“这段代码有什么讲究？” 你就指着代码里的这三处说：
+
+#### 1. 为什么 setIfAbsent 要加时间参数？
+
+- **代码：** setIfAbsent(lockKey, uuid, 10, TimeUnit.SECONDS)
+- **解释：** “这是为了防止**死锁**。如果我抢到了锁，但代码还没执行完服务就挂了（没走到 delete），如果没有过期时间，这个锁就永远存在了，其他线程再也查不了数据。使用带参数的方法是保证‘加锁+设置过期’是**原子性**的。”
+
+#### 2. 为什么抢到锁后要再查一次 Redis（双重检查）？
+
+- **代码：** 4.1 Double Check 部分。
+- **解释：** “这是为了性能优化。假设线程 A 和 B 同时来，A 抢到锁去查库。B 没抢到锁在 Thread.sleep。等 A 查完写入 Redis 并释放锁后，B 醒来抢到了锁。**如果 B 不再查一遍 Redis，它就会再去查一遍数据库**。这样锁的效果就大打折扣了。”
+
+#### 3. 为什么释放锁要比对 UUID？
+
+- **代码：** if (uuid.equals(currentLockVal))
+- **解释：** “为了防止**误删锁**。假设线程 A 业务卡顿，执行了 15 秒，但锁 10 秒就自动过期了。此时线程 B 抢到了锁。等到第 15 秒线程 A 醒来执行 delete，如果不比对 UUID，A 就会把 B 刚刚加的锁给删掉，导致锁失效。”
+
+
+
+---
+
+#### 3. 危机三：缓存雪崩 (Cache Avalanche) —— 晚高峰挂机
+**场景：** “假设我是晚上 8 点上线的服务，当时预热了 10 万个热门视频的缓存，过期时间统一设为了 1 小时。到了晚上 9 点，这 10 万个 Key **同时过期**。”
+
+*   **问题：** 此时大量不同的视频请求同时打到数据库，数据库 CPU 飙升。虽然每个视频只有一次回源（有锁），但总量太大，数据库依然扛不住。
+*   **我的解决方案（随机 TTL）：**
+    *   **随机化过期时间：** 在将视频信息写入 Redis 时，我不设置固定的 TTL（比如 1小时）。
+    *   **公式：** `TTL = 固定时间(1h) + 随机时间(1~30min)`。
+    *   **效果：** 这样就把缓存失效的时间点**均匀分散**在了一个时间段内，避免了同一时刻大面积失效，让数据库的压力曲线更加平滑。
+
+---
+
+### 🧠 面试官可能的“连环追问”与防守
+
+#### 🔥 追问一：用了分布式锁解决击穿，那用户请求岂不是变慢了？（锁的性能）
+**你的回答：**
+> “是的，对于那个负责‘重建缓存’的线程和等待的线程，确实会有几百毫秒的延迟。
+> 但这是为了**保护数据库**必须做的权衡（Trade-off）。如果不加锁，数据库挂了，整个服务都不可用了。
+> 而且热点视频的缓存一旦重建完成（毫秒级），后续几百万请求都能直接命中 Redis，整体性能是非常高的。”
+
+#### 🔥 追问二：你的布隆过滤器怎么预热？如果有新视频发布了怎么加进去？
+**你的回答：**
+> “布隆过滤器需要在服务启动时进行**预热（Pre-heat）**，把数据库里现有的 VideoId 加载进去。
+> 对于新发布的视频，我在**‘视频投稿成功’**的业务逻辑里，会同步将新的 VideoId 添加到布隆过滤器中。
+> 另外，布隆过滤器不支持删除，如果视频被删了，可能会有小概率误判（认为存在实际不存在），但这可以通过‘缓存空值’方案来兜底。”
+
+#### 🔥 追问三：Redis 集群挂了怎么办？
+**你的回答：**
+> “如果 Redis 彻底崩了，我会触发**服务降级（Sentinel 熔断）**。
+> 网关或 Service 层会直接返回一个兜底的静态数据（比如‘系统繁忙’或本地缓存的 Top10 视频），暂时切断对数据库的访问，防止数据库被流量冲垮，等到 Redis 恢复后再打开。”
+
+---
+
+### 🚀 总结
+
+你看，换到**“视频播放接口”**这个场景，这三个问题是不是变得非常合情合理，而且逻辑性超强？
+
+**一定要记住这个故事线：**
+1.  **黑客瞎搞** -> 穿透 -> **存空值/布隆**。
+2.  **爆款过期** -> 击穿 -> **Redisson 锁**。
+3.  **集体过期** -> 雪崩 -> **随机 TTL**。
+
+这套回答结合了你简历里的 **Redis** 和 **Redisson**，简直是量身定做！
