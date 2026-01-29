@@ -180,8 +180,6 @@ public class WebClientFallback implements WebClient {
 }
 ```
 
-
-
 ```java
 @FeignClient(
     name = Constants.WebName, 
